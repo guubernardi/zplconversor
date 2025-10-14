@@ -415,3 +415,82 @@ a {
 .day {
   animation: slideIn 0.3s ease;
 }
+
+/* garante que nada vaze pra fora da célula */
+#calendar { position: relative; }
+.day { position: relative; overflow: hidden; }
+
+/* o resumo do dia não deve capturar clique */
+.day .event { pointer-events: none; }
+
+/* opcional: posiciona o resumo dentro da célula sem “pular” pra fora */
+.day .event {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 8px;
+}
+
+/* só por segurança: o backdrop do modal nunca deve bloquear cliques quando oculto */
+#modalBackDrop { display: none; pointer-events: none; }
+.modal.show ~ #modalBackDrop { display: block; pointer-events: auto; }
+
+/* 1) não deixe o hover deslocar a célula verticalmente */
+.day:hover {
+  background: var(--hover);
+  /* antes tinha: transform: translateY(-2px);  */
+  transform: none;                 /* <- fix principal */
+  box-shadow: var(--shadow-md);
+  border-color: var(--header-color);
+}
+
+/* 2) garanta que a célula não vaze e que o resumo não capture clique */
+#calendar { position: relative; }
+.day { position: relative; overflow: hidden; }
+.day .event, .day .event * { pointer-events: none; }
+
+/* 3) opcional: fixe o resumo no rodapé da célula, sem “sair” dela */
+.day .event {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 8px;
+}
+
+/* antes estava .day + #currentDay { ... } */
+#currentDay {
+  background: var(--current-day);
+  border: 2px solid var(--header-color);
+  font-weight: 700;
+}
+
+/* ----- NOVO GRID PARA O CALENDÁRIO ----- */
+#calendar {
+  display: grid !important;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+/* células clicáveis e sem filhos “roubando” o clique */
+.day {
+  position: relative;
+  height: 110px;           /* pode ajustar */
+  cursor: pointer;
+  user-select: none;
+}
+.day * { pointer-events: none; }   /* tudo dentro ignora o clique */
+.day { pointer-events: auto; }     /* a célula recebe o clique */
+
+/* número do dia separado melhora o clique */
+.day .day-number { font-weight: 600; }
+
+/* highlight do dia atual (corrige seletor antigo) */
+#currentDay {
+  background: var(--current-day);
+  border: 2px solid var(--header-color);
+  font-weight: 700;
+}
+
+/* o resumo do dia fica dentro da célula, sem extrapolar */
+.day .event {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 8px;
+  pointer-events: none;
+}
+

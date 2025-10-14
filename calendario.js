@@ -1,5 +1,5 @@
 // =======================
-//  Calendário de Pedidos (Supabase) — compat ES2018
+//  Calendário de Pedidos (Supabase) — novo grid + clique confiável
 // =======================
 
 // --- Supabase ---
@@ -25,11 +25,6 @@ var backDrop       = document.getElementById('modalBackDrop');
 // =======================
 // Helpers
 // =======================
-
-var WEEKDAYS = [
-  'domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'
-];
-
 function isoOf(y, mZero, d) {
   return y + '-' + String(mZero + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
@@ -42,12 +37,11 @@ function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// normaliza marketplace em um CODE estável
+// normaliza marketplace para um CODE estável
 function normCode(val) {
   var v = (val == null) ? '' : String(val).trim();
   var U = v.toUpperCase();
   if (U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'UNK') return U;
-
   var l = v.toLowerCase();
   if (l.indexOf('mercado') !== -1 && l.indexOf('livre') !== -1) return 'ML';
   if (l.indexOf('magalu') !== -1 || l.indexOf('magazine') !== -1) return 'MAGALU';
@@ -61,8 +55,6 @@ function codeToName(code) {
   if (c === 'SHOPEE') return 'Shopee';
   return 'Outros';
 }
-
-// resumo (contagem por marketplace) para células e topo do modal
 function resumeByMarketplace(items) {
   var out = { ML: 0, SHOPEE: 0, MAGALU: 0, UNK: 0 };
   for (var i = 0; i < items.length; i++) {
@@ -73,14 +65,23 @@ function resumeByMarketplace(items) {
   return out;
 }
 
-// LocalStorage helpers (fallback)
-function lsGetMap() {
-  try { return JSON.parse(localStorage.getItem('labelsByDate') || '{}'); }
-  catch { return {}; }
+// uma loja não pode repetir a mesma NFe 2x no mesmo dia
+function dedupeByLojaNFe(arr) {
+  var seen = Object.create(null);
+  var out = [];
+  for (var i = 0; i < arr.length; i++) {
+    var it = arr[i] || {};
+    var loja = (it.loja || '').toUpperCase().trim();
+    var nf   = (it.nfe_numero || '').replace(/\D+/g,'');
+    var key  = loja + '|' + nf;
+    if (!seen[key]) { seen[key] = true; out.push(it); }
+  }
+  return out;
 }
-function lsSetMap(obj) {
-  try { localStorage.setItem('labelsByDate', JSON.stringify(obj || {})); } catch {}
-}
+
+// LocalStorage (fallback/merge)
+function lsGetMap() { try { return JSON.parse(localStorage.getItem('labelsByDate') || '{}'); } catch(e){ return {}; } }
+function lsSetMap(obj) { try { localStorage.setItem('labelsByDate', JSON.stringify(obj || {})); } catch(e){} }
 
 // modal show/hide
 function showLabelsModal() {
@@ -108,8 +109,9 @@ async function fetchMonthMap(year, monthZeroBased) {
   var startISO = start.toISOString().slice(0,10);
   var endISO   = end.toISOString().slice(0,10);
 
-  // --- Supabase
   var map = {};
+
+  // Supabase
   try {
     var resp = await sb
       .from('labels')
@@ -118,9 +120,7 @@ async function fetchMonthMap(year, monthZeroBased) {
       .lt('date', endISO)
       .order('date', { ascending: true });
 
-    if (resp.error) {
-      console.error('Erro ao buscar mês no Supabase:', resp.error);
-    } else {
+    if (!resp.error) {
       var data = resp.data || [];
       for (var i=0;i<data.length;i++) {
         var row = data[i];
@@ -135,12 +135,12 @@ async function fetchMonthMap(year, monthZeroBased) {
         if (!map[item.date]) map[item.date] = [];
         map[item.date].push(item);
       }
+    } else {
+      console.error('Erro Supabase:', resp.error);
     }
-  } catch (e) {
-    console.error('Falha geral ao ler Supabase:', e);
-  }
+  } catch (e) { console.error('Falha geral Supabase:', e); }
 
-  // --- LocalStorage fallback/merge
+  // LocalStorage merge
   try {
     var store = lsGetMap();
     Object.keys(store).forEach(function(iso){
@@ -160,109 +160,118 @@ async function fetchMonthMap(year, monthZeroBased) {
         }
       }
     });
-  } catch (e2) {
-    console.warn('localStorage inválido:', e2);
-  }
+  } catch (e2) { console.warn('localStorage inválido:', e2); }
 
+  // aplica dedupe loja+NF por dia
+  Object.keys(map).forEach(function(k){ map[k] = dedupeByLojaNFe(map[k]); });
   return map;
 }
 
 // =======================
-// Render do calendário
+// Render do calendário (CSS Grid)
 // =======================
 async function load() {
-  var date = new Date();
-  if (nav !== 0) date.setMonth(date.getMonth() + nav);
+  var today = new Date();
+  var base  = new Date(today.getFullYear(), today.getMonth(), 1);
+  if (nav !== 0) { base.setMonth(base.getMonth() + nav); }
 
-  var year  = date.getFullYear();
-  var month = date.getMonth();
+  var year  = base.getFullYear();
+  var month = base.getMonth();
 
+  // título
   if (monthDisplay) {
-    monthDisplay.textContent = date.toLocaleDateString('pt-BR',{ month:'long' }) + ', ' + year;
+    monthDisplay.textContent = base.toLocaleDateString('pt-BR',{ month:'long' }) + ', ' + year;
   }
 
-  // busca/atualiza cache do mês
+  // dados
   monthCache = await fetchMonthMap(year, month);
 
+  // calendário
   calendar.innerHTML = '';
 
   var daysInMonth = new Date(year, month + 1, 0).getDate();
-  var firstDay    = new Date(year, month, 1);
-  var weekdayName = firstDay.toLocaleDateString('pt-BR', { weekday: 'long' });
-  var paddingDays = WEEKDAYS.indexOf(String(weekdayName || '').toLowerCase());
-  if (paddingDays < 0) paddingDays = 0; // fallback seguro
+  var firstWeekday = new Date(year, month, 1).getDay(); // 0=Dom ... 6=Sáb (correto p/ BR)
+  var totalCells   = firstWeekday + daysInMonth;
+  // completa até múltiplo de 7 (5 ou 6 linhas, sem “pular” clique)
+  var rows = Math.ceil(totalCells / 7);
+  totalCells = rows * 7;
 
-  for (var i = 1; i <= paddingDays + daysInMonth; i++) {
-    var cell = document.createElement('div');
+  for (var i = 0; i < totalCells; i++) {
+    var cell = document.createElement('button'); // button melhora o foco/clique
+    cell.type = 'button';
     cell.className = 'day';
+    cell.tabIndex = 0;
 
-    if (i <= paddingDays) {
+    if (i < firstWeekday || i >= firstWeekday + daysInMonth) {
       cell.classList.add('padding');
       calendar.appendChild(cell);
       continue;
     }
 
-    var day = i - paddingDays;
+    var day = i - firstWeekday + 1;
     var iso = isoOf(year, month, day);
-
-    cell.textContent = day;
     cell.dataset.iso = iso;
-    cell.setAttribute('role', 'button');
-    cell.setAttribute('tabindex', '0');
-    if (day === (new Date()).getDate() && nav === 0) cell.id = 'currentDay';
+
+    // header do número do dia
+    var num = document.createElement('div');
+    num.className = 'day-number';
+    num.textContent = day;
+    cell.appendChild(num);
 
     // resumo do dia
     var items = monthCache[iso] || [];
     if (items.length) {
       var res = resumeByMarketplace(items);
-      var div = document.createElement('div');
-      div.className = 'event';
-      div.style.display = 'flex';
-      div.style.flexWrap = 'wrap';
-      div.style.gap = '6px';
-      div.innerHTML =
+      var wrap = document.createElement('div');
+      wrap.className = 'event';
+      wrap.innerHTML =
         '<span class="badge">' + items.length + ' etiqueta(s)</span>' +
         (res.SHOPEE ? '<span class="badge badge-shopee">Shopee ' + res.SHOPEE + '</span>' : '') +
         (res.ML     ? '<span class="badge badge-ml">ML '     + res.ML     + '</span>' : '') +
         (res.MAGALU ? '<span class="badge badge-magalu">Magalu ' + res.MAGALU + '</span>' : '') +
         (res.UNK    ? '<span class="badge badge-unk">Outros ' + res.UNK    + '</span>' : '');
-      cell.appendChild(div);
+      cell.appendChild(wrap);
     }
+
+    // hoje
+    var isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear() && nav === 0);
+    if (isToday) cell.id = 'currentDay';
 
     calendar.appendChild(cell);
   }
 }
 
-// clique/teclado para abrir o modal do dia
+// clique/teclado (event delegation)
 calendar.addEventListener('click', function(e) {
   var cell = e.target.closest('.day');
   if (!cell || cell.classList.contains('padding')) return;
-  openModalFor(cell.dataset.iso);
+  var iso = cell.dataset.iso;
+  if (iso) openModalFor(iso);
 });
 calendar.addEventListener('keydown', function(e) {
-  if (e.key !== 'Enter' && e.key !== ' ') return;
   var cell = e.target.closest('.day');
   if (!cell || cell.classList.contains('padding')) return;
-  e.preventDefault();
-  openModalFor(cell.dataset.iso);
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    var iso = cell.dataset.iso;
+    if (iso) openModalFor(iso);
+  }
 });
 
 // =======================
-// Modal (agrupado por marketplace)
+// Modal (só filtros por marketplace)
 // =======================
 function renderLabelsModal(iso, items) {
   if (labelsTitulo) labelsTitulo.textContent = formatISO(iso);
 
-  // estado do modal
   var state = {
     iso: iso,
-    raw: items,
+    raw: items,                        // já deduplicado loja+NF
     mkt: { SHOPEE:true, ML:true, MAGALU:true, UNK:true },
     q: ''
   };
 
   function apply() {
-    // resumo no topo
     var res = resumeByMarketplace(state.raw);
     if (labelsResumo) {
       labelsResumo.innerHTML =
@@ -270,7 +279,6 @@ function renderLabelsModal(iso, items) {
         res.SHOPEE + ' Shopee, ' + res.ML + ' ML, ' + res.MAGALU + ' Magalu, ' + res.UNK + ' Outras.';
     }
 
-    // filtros
     var q = state.q.trim().toLowerCase();
     var filtered = [];
     for (var i=0;i<state.raw.length;i++) {
@@ -284,7 +292,6 @@ function renderLabelsModal(iso, items) {
       filtered.push(it);
     }
 
-    // buckets
     var buckets = { SHOPEE:[], ML:[], MAGALU:[], UNK:[] };
     for (var j=0;j<filtered.length;j++) {
       var it2 = filtered[j];
@@ -324,7 +331,7 @@ function renderLabelsModal(iso, items) {
       section('Outros',        buckets.UNK,    'badge-unk');
   }
 
-  // ligar chips de filtro
+  // chips (apenas marketplace)
   var chips = document.querySelectorAll('.flt-mkt');
   for (var i=0;i<chips.length;i++) {
     (function(cb){
@@ -350,8 +357,8 @@ function renderLabelsModal(iso, items) {
     btnCsv.onclick = function() {
       var headers = ['arquivo','loja','marketplace','marketplace_code','nfe_numero'];
       var q = (state.q || '').toLowerCase();
-
       var arr = [];
+
       for (var i=0;i<state.raw.length;i++) {
         var it = state.raw[i];
         var code = normCode(it.marketplace_code || it.marketplace);
@@ -386,25 +393,14 @@ function renderLabelsModal(iso, items) {
     };
   }
 
-  // limpar dia no banco + localStorage
+  // limpar dia
   if (btnLabelsClear) {
     btnLabelsClear.onclick = async function () {
       if (!confirm('Remover ' + items.length + ' etiqueta(s) de ' + formatISO(iso) + ' do banco?')) return;
-
-      // apaga no Supabase
       var resp = await sb.from('labels').delete().eq('date', iso);
-      if (resp.error) {
-        alert('Erro ao limpar o dia.');
-        console.error(resp.error);
-        return;
-      }
+      if (resp.error) { alert('Erro ao limpar o dia.'); console.error(resp.error); return; }
 
-      // apaga no localStorage
-      try {
-        var store = lsGetMap();
-        if (store[iso]) { delete store[iso]; lsSetMap(store); }
-      } catch {}
-
+      try { var store = lsGetMap(); if (store[iso]) { delete store[iso]; lsSetMap(store); } } catch(e){}
       delete monthCache[iso];
       hideLabelsModal();
       load();
@@ -417,11 +413,12 @@ function renderLabelsModal(iso, items) {
 // abre modal do dia selecionado
 function openModalFor(iso) {
   var items = monthCache[iso] ? monthCache[iso].slice() : [];
-  for (var i=0;i<items.length;i++) {
-    items[i] = Object.assign({}, items[i], {
-      marketplace_code: normCode(items[i].marketplace_code || items[i].marketplace)
+  items = dedupeByLojaNFe(items).map(function(it){
+    return Object.assign({}, it, {
+      marketplace_code: normCode(it.marketplace_code || it.marketplace)
     });
-  }
+  });
+
   if (!items.length) {
     if (labelsTitulo)  labelsTitulo.textContent = formatISO(iso);
     if (labelsResumo)  labelsResumo.textContent = 'Sem itens.';
@@ -434,12 +431,10 @@ function openModalFor(iso) {
 }
 
 // =======================
-// Navegação do calendário
+// Navegação
 // =======================
-var backBtn = document.getElementById('backButton');
-var nextBtn = document.getElementById('nextButton');
-if (backBtn) backBtn.addEventListener('click', function(){ nav = nav - 1; load(); });
-if (nextBtn) nextBtn.addEventListener('click', function(){ nav = nav + 1; load(); });
+document.getElementById('backButton')?.addEventListener('click', function(){ nav = nav - 1; load(); });
+document.getElementById('nextButton')?.addEventListener('click', function(){ nav = nav + 1; load(); });
 
 // init
 load();

@@ -5,7 +5,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-// fallback quando não houver nenhuma pista confiável no ZPL:
 const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'MAGALU' | 'UNK'
 
 const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', UNK:'❓' };
@@ -69,7 +68,6 @@ function dedupeByNFe(arr) {
       const score = base*10 + detectedBonus + lojaBonus;
       if (score > bestScore) { bestScore = score; best = it; }
     }
-    // sincroniza o nome com o code escolhido
     const code = (best.marketplace_code || best.marketplace_raw || 'UNK').toUpperCase();
     best.marketplace = codeToName(code);
     best.marketplace_code = code;
@@ -114,15 +112,15 @@ function detectMarketplace(text) {
 
   // ---- Shopee (muitas pistas) ----
   if (
-    has(/\bshopee(\.com\.br)?\b/) ||                  // nome/domínio
+    has(/\bshopee(\.com\.br)?\b/) ||
     /logo[_ ]?shopee/i.test(tRaw) ||
     has(/\bc[oó]digo\s+do\s+pedido\b/) ||
     has(/\bid\s+do\s+pedido\b/) ||
     has(/\bpedido\s*[:#]\s*[a-z0-9-]{5,}\b/) ||
-    has(/\b(spx|spx-?br|spxbr)\b/) ||                  // logística SPX
-    has(/\bshp[_-]?[a-z0-9]{4,}\b/) ||                // ids SHP...
+    has(/\b(spx|spx-?br|spxbr)\b/) ||
+    has(/\bshp[_-]?[a-z0-9]{4,}\b/) ||
     has(/\bshpbr[a-z0-9-]*\b/) ||
-    has(/\bsl[sx]-?[a-z0-9-]{4,}\b/) ||               // variações Shopee Logistics
+    has(/\bsl[sx]-?[a-z0-9-]{4,}\b/) ||
     has(/\bcoleta\s*shopee\b/) || has(/\blog[íi]stica\s*shopee\b/)
   ) {
     return { code:'SHOPEE', name: codeToName('SHOPEE'), detected:true };
@@ -207,7 +205,6 @@ function atualizarBotoes(){
 function renderizar(){
   atualizarBotoes();
   if (!resultados.length){ out.innerHTML=''; return; }
-  // garante nome consistente com o code
   resultados.forEach(r => r.marketplace = codeToName((r.marketplace_code||'UNK').toUpperCase()));
 
   const linhas = resultados.map((r,i)=>`
@@ -231,11 +228,14 @@ function renderizar(){
     </table></div>`;
 }
 
-// mini-editor marketplace
+// ====== Mini-editor de marketplace (corrigido) ======
 out.addEventListener('click', (e) => {
   const cell = e.target.closest('td.market-cell'); if (!cell) return;
+  if (cell.dataset.editing === '1') return; // já aberto
+
   const idx = +cell.dataset.idx;
   const atual = (resultados[idx]?.marketplace_code || 'UNK').toUpperCase();
+
   const sel = document.createElement('select');
   ['ML','MAGALU','SHOPEE','UNK'].forEach(code=>{
     const o=document.createElement('option');
@@ -244,15 +244,45 @@ out.addEventListener('click', (e) => {
     if(code===atual) o.selected=true;
     sel.appendChild(o);
   });
-  sel.style.width='100%'; sel.style.padding='8px 10px'; sel.style.border='1px solid var(--border)'; sel.style.borderRadius='8px';
+
+  sel.style.width='100%';
+  sel.style.padding='8px 10px';
+  sel.style.border='1px solid var(--border)';
+  sel.style.borderRadius='8px';
+  sel.className = 'mkt-editor';
+
+  // impedir re-entrada enquanto edita
+  cell.dataset.editing = '1';
+  const restore = () => { cell.dataset.editing = ''; };
+
+  // coloca o select e foca
   cell.innerHTML=''; cell.appendChild(sel); sel.focus();
-  const commit=()=>{ const code=(sel.value||'UNK').toUpperCase();
-    resultados[idx].marketplace_code=code;
+
+  // não fechar ao clicar dentro
+  sel.addEventListener('click', (ev)=>ev.stopPropagation());
+  sel.addEventListener('mousedown', (ev)=>ev.stopPropagation());
+
+  // confirma no change ou Enter; cancela no Esc
+  const commit = () => {
+    const code = (sel.value||'UNK').toUpperCase();
+    resultados[idx].marketplace_code = code;
     resultados[idx].marketplace      = codeToName(code);
-    renderizar();
+    // re-render só a célula pra evitar “piscar”
+    cell.innerHTML = marketplaceBadge({code});
+    restore();
   };
+  const cancel = () => {
+    cell.innerHTML = marketplaceBadge({code: resultados[idx].marketplace_code});
+    restore();
+  };
+
   sel.addEventListener('change', commit);
-  sel.addEventListener('blur', commit);
+  sel.addEventListener('keydown', (ev)=>{
+    if (ev.key === 'Enter'){ ev.preventDefault(); commit(); }
+    else if (ev.key === 'Escape'){ ev.preventDefault(); cancel(); }
+  });
+
+  // importante: NÃO usar blur pra não fechar enquanto escolhe
 });
 
 // ====== Upload / DnD ======
@@ -320,7 +350,6 @@ btnJSON?.addEventListener('click', async ()=>{
 btnLimpar?.addEventListener('click',()=>{ resultados=[]; renderizar(); });
 
 // ====== Calendário (Supabase + LocalStorage) ======
-// ====== Calendário (Supabase + LocalStorage) ======
 const calTodayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -382,7 +411,6 @@ btnCal?.addEventListener('click', async () => {
     alert('Salvei no calendário local, mas houve erro ao gravar no banco: ' + (err.message || err));
   }
 });
-
 
 // inicial
 renderizar();
