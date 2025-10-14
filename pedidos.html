@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calendário de Pedidos | Sistema ZPL</title>
+  <meta name="description" content="Calendário inteligente de pedidos e etiquetas" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- CSS principal -->
+  <link rel="stylesheet" href="calendario.css"/>
+
+  <!-- Estilos do modal de etiquetas (versão aprimorada) -->
+  <style>
+    /* Backdrop do modal */
+    #modalBackDrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,.35);
+      display: none;
+      z-index: 40;
+    }
+
+    /* ========= Modal Moderno ========= */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .modal .modal-panel {
+      width: min(800px, 92vw);
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.98));
+      backdrop-filter: blur(12px);
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 30px 80px rgba(2,6,23,.4), 0 0 1px rgba(2,6,23,.1);
+      border-radius: 20px;
+      overflow: hidden;
+      transform: translateY(10px) scale(.98);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: auto;
+    }
+    .modal.show .modal-panel { transform:none; opacity:1; }
+
+    .modal-header {
+      display: flex; align-items: start; justify-content: space-between;
+      padding: 24px 24px 16px; background: linear-gradient(to bottom, rgba(37,99,235,.06), transparent);
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .modal-titles { display:flex; flex-direction:column; gap:4px; }
+    .modal-kicker { font-size:11px; letter-spacing:.1em; color:#64748b; text-transform:uppercase; font-weight:600; }
+    .modal-titles h3 { margin:4px 0 8px; font-size:22px; font-weight:700; color:#1e293b; }
+    .modal-sub { color:#475569; font-size:14px; }
+
+    .modal-close {
+      width:40px; height:40px; border-radius:12px; border:1px solid #e2e8f0; background:#fff; cursor:pointer;
+      font-size:24px; line-height:1; color:#0f172a; transition:.2s; display:flex; align-items:center; justify-content:center;
+    }
+    .modal-close:hover { background:#f8fafc; transform:scale(1.05); }
+
+    .modal-toolbar {
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#fbfdff; flex-wrap:wrap;
+    }
+    .filters { display:flex; gap:10px; flex-wrap:wrap; }
+    .chip {
+      display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid #cbd5e1;
+      border-radius:999px; background:#fff; font-size:13px; font-weight:500; transition:.2s; cursor:pointer;
+    }
+    .chip:hover { border-color:#2563eb; background:#eff6ff; }
+    .chip input { accent-color:#2563eb; cursor:pointer; }
+
+    .search {
+      flex:1; min-width:220px; max-width:300px; border:1px solid #cbd5e1; border-radius:12px;
+      padding:10px 14px; font:inherit; outline:none; transition:.2s;
+    }
+    .search:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+
+    .modal-body { padding:12px 16px 20px; max-height:60vh; overflow:auto; }
+    .modal-body::-webkit-scrollbar{ width:10px; }
+    .modal-body::-webkit-scrollbar-track{ background:#f1f5f9; border-radius:10px; }
+    .modal-body::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; }
+    .modal-body::-webkit-scrollbar-thumb:hover{ background:#94a3b8; }
+
+    .group { border:1px solid #e2e8f0; border-radius:16px; background:#fff; margin:16px 8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.05); transition:.2s; }
+    .group:hover { box-shadow:0 4px 12px rgba(0,0,0,.08); }
+    .group-header { display:flex; align-items:center; gap:12px; padding:14px 16px; background:linear-gradient(180deg,#f8fafc,#fff); border-bottom:1px solid #e2e8f0; }
+
+    .badge { display:inline-block; padding:4px 10px; color:black; border-radius:999px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#eef; }
+    .badge-ml { background:#dbf113; border-color:#a5b4fc; color:#3730a3; }
+    .badge-shopee { background:#ffe4e6; border-color:#fecdd3; color:#9f1239; }
+    .badge-magalu { background:#3730a3; border-color:#3730a3; color:#fff; }
+    .badge-unk { background:#f1f5f9; border-color:#e2e8f0; color:#475569; }
+
+    .list { list-style:none; margin:0; padding:8px 12px; }
+    .item { display:flex; align-items:center; gap:12px; padding:12px 10px; border-bottom:1px dashed #e5e7eb; transition:background .2s; }
+    .item:last-child{ border-bottom:none; }
+    .item:hover{ background:#f8fafc; }
+    .item .nfe { font-weight:700; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#1e293b; }
+    .muted { color:#64748b; font-size:14px; }
+
+    .modal-footer { display:flex; align-items:center; gap:12px; padding:16px 20px; border-top:1px solid #e2e8f0; background:#fbfdff; flex-wrap:wrap; }
+    .spacer { flex:1; }
+    .btn {
+      padding:12px 18px; border-radius:12px; border:1px solid #cbd5e1; background:#fff; cursor:pointer;
+      font-weight:600; color:black; width:115px; font-size:14px; transition:.2s;
+    }
+    .btn:hover { background:#2563eb; color:#fff; border-color:#2563eb; transform:translateY(-2px); box-shadow:0 4px 12px rgba(37,99,235,.3); }
+    .btn-danger { border-color:#fecaca; background:#fff0f0; color:#991b1b; }
+    .btn-danger:hover { background:#ef4444; color:#fff; border-color:#ef4444; }
+  </style>
+</head>
+<body>
+
+  <div class="menu">
+    <header>
+      <nav>
+        <ul>
+          <a href="zpl.html"><li>← Voltar ao Conversor</li></a>
+        </ul>
+      </nav>
+    </header>
+  </div>
+
+  <div id="container">
+    <div id="header">
+      <div id="monthDisplay"></div>
+      <div>
+        <button id="backButton">◀ Voltar</button>
+        <button id="nextButton">Próximo ▶</button>
+      </div>
+    </div>
+
+    <div id="weekdays">
+      <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+    </div>
+
+    <!-- Calendário dinâmico -->
+    <div id="calendar"></div>
+  </div>
+
+  <!-- Modais antigos (mantidos para compatibilidade com o JS) -->
+  <div id="newEventModal">
+    <h2>Novo Evento</h2>
+    <input id="eventTitleInput" placeholder="Título do evento"/>
+    <button id="saveButton">Salvar</button>
+    <button id="cancelButton">Cancelar</button>
+  </div>
+
+  <div id="deleteEventModal">
+    <h2>Evento</h2>
+    <div id="eventText"></div><br/>
+    <button id="deleteButton">Deletar</button>
+    <button id="closeButton">Fechar</button>
+  </div>
+
+  <!-- Backdrop compartilhado -->
+  <div id="modalBackDrop"></div>
+
+  <!-- Modal de Etiquetas do Dia -->
+  <div id="labelsModal" class="modal" aria-modal="true" role="dialog">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div class="modal-titles">
+          <span class="modal-kicker">Etiquetas do dia</span>
+          <h3 id="labelsTitulo">—</h3>
+          <div id="labelsResumo" class="modal-sub"></div>
+        </div>
+        <button id="labelsFechar" class="modal-close" aria-label="Fechar">×</button>
+      </div>
+
+      <div class="modal-toolbar">
+        <div class="filters">
+          <label class="chip"><input type="checkbox" class="flt-mkt" value="SHOPEE" checked> Shopee</label>
+          <label class="chip"><input type="checkbox" class="flt-mkt" value="ML" checked> Mercado Livre</label>
+          <label class="chip"><input type="checkbox" class="flt-mkt" value="MAGALU" checked> Magalu</label>
+          <label class="chip"><input type="checkbox" class="flt-mkt" value="UNK" checked> Outros</label>
+        </div>
+        <input id="labelsSearch" type="search" placeholder="Filtrar por loja ou NFe…" class="search">
+      </div>
+
+      <div id="labelsConteudo" class="modal-body"></div>
+
+      <div class="modal-footer">
+        <button id="labelsExportCSV" class="btn">📥 Baixar CSV do dia</button>
+        <span class="spacer"></span>
+        <button id="labelsLimparDia" class="btn btn-danger" title="Remove as etiquetas deste dia do calendário">🗑️ Limpar dia</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Carregar Supabase ANTES do calendário -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <!-- Script do calendário (versão que busca no Supabase) -->
+  <script src="calendario.js" defer></script>
+</body>
+</html>

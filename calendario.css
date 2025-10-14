@@ -1,0 +1,417 @@
+@charset "UTF-8";
+
+/* ========== Design System ========== */
+html {
+  /* Cores Principais */
+  --body-color: #f8fafc;
+  --header-color: #2563eb;
+  --header-button: #3b82f6;
+  --color-weekdays: #1e293b;
+  --box-shadow: #cbd5e1;
+  --hover: #dbeafe;
+  --current-day: #eff6ff;
+  --event-color: #3b82f6;
+  --modal-event: #ffffff;
+  --color-day: #ffffff;
+  
+  /* Gradientes */
+  --gradient-header: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.95) 100%);
+  
+  /* Sombras */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* Bordas */
+  --border: #e2e8f0;
+  --radius: 12px;
+  --radius-lg: 16px;
+  
+  /* Transições */
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  margin-top: 50px;
+  justify-content: center;
+  background: linear-gradient(to bottom, #ffffff 0%, var(--body-color) 100%);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  color: #1e293b;
+}
+
+.day .event, 
+.day .event * {
+  pointer-events: none;
+}
+
+
+button {
+  width: 75px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  outline: none;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  transition: var(--transition);
+  background: var(--gradient-header);
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 40px;
+  padding: 16px 24px;
+  background: var(--gradient-card);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+ul li {
+  list-style: none;
+}
+
+a {
+  text-decoration: none;
+  color: var(--color-weekdays);
+  font-weight: 600;
+  transition: var(--transition);
+  padding: 8px 16px;
+  border-radius: var(--radius);
+}
+
+
+.container {
+  margin-bottom: 40px;
+}
+
+/* ========== Header do Calendário ========== */
+#header {
+  padding: 20px 24px;
+  color: #1e293b;
+  font-size: 28px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--gradient-card);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  margin-bottom: 24px;
+}
+
+#header button {
+  background: var(--gradient-header);
+  border: none;
+  padding: 10px 11px;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+#header button:hover {
+  background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+}
+
+/* ========== Container ========== */
+#container {
+  width: 770px;
+  padding: 20px;
+  background: var(--gradient-card);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ========== Dias da Semana ========== */
+#weekdays {
+  width: 100%;
+  display: flex;
+  color: var(--color-weekdays);
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+#weekdays div {
+  width: 100px;
+  padding: 12px 10px;
+  text-align: center;
+}
+
+/* ========== Grid do Calendário ========== */
+#calendar {
+  width: 100%;
+  margin: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ========== Células dos Dias ========== */
+.day {
+  width: 100px;
+  padding: 12px;
+  height: 100px;
+  cursor: pointer;
+  box-sizing: border-box;
+  background: var(--color-day);
+  margin: 0;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: var(--radius);
+  transition: var(--transition);
+  font-weight: 500;
+  color: #334155;
+}
+
+.day:hover {
+  background: var(--hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--header-color);
+}
+
+.day + #currentDay {
+  background: var(--current-day);
+  border: 2px solid var(--header-color);
+  font-weight: 700;
+}
+
+/* ========== Eventos ========== */
+.event {
+  font-size: 10px;
+  padding: 4px 6px;
+  background: var(--event-color);
+  color: white;
+  border-radius: 6px;
+  max-height: 55px;
+  overflow: hidden;
+  font-weight: 500;
+  margin-top: 4px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.padding {
+  cursor: default !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.padding:hover {
+  transform: none !important;
+  background: transparent !important;
+}
+
+/* ========== Modais ========== */
+#newEventModal, #deleteEventModal {
+  display: none;
+  z-index: 20;
+  padding: 32px;
+  background: var(--modal-event);
+  box-shadow: var(--shadow-xl);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  width: 400px;
+  top: 100px;
+  left: calc(50% - 200px);
+  position: absolute;
+  font-family: 'Inter', sans-serif;
+}
+
+#newEventModal h2, #deleteEventModal h2 {
+  margin-bottom: 20px;
+  color: var(--color-weekdays);
+  font-weight: 700;
+  font-size: 24px;
+}
+
+#eventTitleInput {
+  padding: 12px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 24px;
+  border-radius: var(--radius);
+  outline: none;
+  border: 2px solid var(--border);
+  font-family: inherit;
+  font-size: 15px;
+  transition: var(--transition);
+}
+
+#eventTitleInput:focus {
+  border-color: var(--header-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+#eventTitleInput.error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+#cancelButton, #deleteButton {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+#cancelButton:hover, #deleteButton:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+}
+
+#saveButton, #closeButton {
+  background: var(--gradient-header);
+}
+
+#saveButton:hover, #closeButton:hover {
+  background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+}
+
+#eventText {
+  font-size: 15px;
+  color: #475569;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+/* Modal invisível por padrão */
+.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:50;
+  align-items:center;
+  justify-content:center;
+  pointer-events:none; /* bloqueia clique quando escondido */
+}
+
+/* Quando .show, exibe e aceita cliques */
+.modal.show{
+  display:flex;
+  pointer-events:auto;
+}
+
+/* Painel já está ok; mantém a animação */
+.modal .modal-panel{
+  width:min(800px,92vw);
+  background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(255,255,255,.98));
+  backdrop-filter:blur(12px);
+  border:1px solid #e2e8f0;
+  box-shadow:0 30px 80px rgba(2,6,23,.4),0 0 1px rgba(2,6,23,.1);
+  border-radius:20px;
+  overflow:hidden;
+  transform:translateY(10px) scale(.98);
+  opacity:0;
+  transition:all .3s cubic-bezier(.4,0,.2,1);
+  pointer-events:auto; /* permite clique dentro */
+}
+.modal.show .modal-panel{
+  transform:none;
+  opacity:1;
+}
+
+/* ========== Responsivo ========== */
+@media (max-width: 850px) {
+  #container {
+    width: 100%;
+    max-width: 770px;
+  }
+  
+  body {
+    padding: 20px;
+    margin-top: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  #weekdays div,
+  .day {
+    width: calc((100% - 56px) / 7);
+    font-size: 12px;
+  }
+  
+  #header {
+    font-size: 20px;
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+  }
+  
+  #newEventModal, #deleteEventModal {
+    width: calc(100% - 40px);
+    left: 20px;
+    top: 80px;
+  }
+}
+
+/* ========== Animações ========== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+#container {
+  animation: fadeIn 0.5s ease;
+}
+
+.day {
+  animation: slideIn 0.3s ease;
+}
