@@ -1,5 +1,5 @@
 // =======================
-//  Calendário de Pedidos (Supabase) — novo grid + clique confiável
+//  Calendário de Pedidos (Supabase) — grid novo + clique confiável + TZ fix
 // =======================
 
 // --- Supabase ---
@@ -25,17 +25,10 @@ var backDrop       = document.getElementById('modalBackDrop');
 // =======================
 // Helpers
 // =======================
-function isoOf(y, mZero, d) {
-  return y + '-' + String(mZero + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-}
-function formatISO(iso) {
-  var p = iso.split('-');
-  return p[2] + '/' + p[1] + '/' + p[0];
-}
-function escapeHtml(s) {
-  s = (s == null) ? '' : String(s);
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function pad(n){ return String(n).padStart(2,'0'); }
+function isoOf(y, mZero, d) { return y + '-' + pad(mZero + 1) + '-' + pad(d); }
+function formatISO(iso) { var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+function escapeHtml(s) { s = (s == null) ? '' : String(s); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // normaliza marketplace para um CODE estável
 function normCode(val) {
@@ -72,7 +65,7 @@ function dedupeByLojaNFe(arr) {
   for (var i = 0; i < arr.length; i++) {
     var it = arr[i] || {};
     var loja = (it.loja || '').toUpperCase().trim();
-    var nf   = (it.nfe_numero || '').replace(/\D+/g,'');
+    var nf   = String(it.nfe_numero || '').replace(/\D+/g,'');
     var key  = loja + '|' + nf;
     if (!seen[key]) { seen[key] = true; out.push(it); }
   }
@@ -101,13 +94,14 @@ if (backDrop) backDrop.onclick = hideLabelsModal;
 window.addEventListener('keydown', function(e){ if (e.key === 'Escape') hideLabelsModal(); });
 
 // =======================
-// Supabase + Local: busca mês
+// Supabase + Local: busca mês (sem UTC!)
 // =======================
 async function fetchMonthMap(year, monthZeroBased) {
-  var start = new Date(Date.UTC(year, monthZeroBased, 1));
-  var end   = new Date(Date.UTC(year, monthZeroBased + 1, 1)); // exclusivo
-  var startISO = start.toISOString().slice(0,10);
-  var endISO   = end.toISOString().slice(0,10);
+  // limites do mês como strings puras, sem toISOString/UTC
+  var startISO = year + '-' + pad(monthZeroBased + 1) + '-01';
+  var endISO   = (monthZeroBased === 11)
+    ? (year + 1) + '-01-01'
+    : year + '-' + pad(monthZeroBased + 2) + '-01';
 
   var map = {};
 
@@ -132,8 +126,7 @@ async function fetchMonthMap(year, monthZeroBased) {
           marketplace: row.marketplace,
           nfe_numero: row.nfe_numero
         };
-        if (!map[item.date]) map[item.date] = [];
-        map[item.date].push(item);
+        (map[item.date] || (map[item.date] = [])).push(item);
       }
     } else {
       console.error('Erro Supabase:', resp.error);
@@ -146,7 +139,7 @@ async function fetchMonthMap(year, monthZeroBased) {
     Object.keys(store).forEach(function(iso){
       if (iso >= startISO && iso < endISO) {
         var arr = store[iso] || [];
-        if (!map[iso]) map[iso] = [];
+        (map[iso] || (map[iso] = []));
         for (var j=0;j<arr.length;j++) {
           var r = arr[j];
           map[iso].push({
@@ -162,13 +155,13 @@ async function fetchMonthMap(year, monthZeroBased) {
     });
   } catch (e2) { console.warn('localStorage inválido:', e2); }
 
-  // aplica dedupe loja+NF por dia
+  // dedupe por dia (loja+NF)
   Object.keys(map).forEach(function(k){ map[k] = dedupeByLojaNFe(map[k]); });
   return map;
 }
 
 // =======================
-// Render do calendário (CSS Grid)
+// Render do calendário (grid fixado)
 // =======================
 async function load() {
   var today = new Date();
@@ -189,15 +182,14 @@ async function load() {
   // calendário
   calendar.innerHTML = '';
 
-  var daysInMonth = new Date(year, month + 1, 0).getDate();
-  var firstWeekday = new Date(year, month, 1).getDay(); // 0=Dom ... 6=Sáb (correto p/ BR)
+  var daysInMonth  = new Date(year, month + 1, 0).getDate();
+  var firstWeekday = new Date(year, month, 1).getDay(); // 0=Dom ... 6=Sáb
   var totalCells   = firstWeekday + daysInMonth;
-  // completa até múltiplo de 7 (5 ou 6 linhas, sem “pular” clique)
-  var rows = Math.ceil(totalCells / 7);
-  totalCells = rows * 7;
+  var rows         = Math.ceil(totalCells / 7);
+  totalCells       = rows * 7;
 
   for (var i = 0; i < totalCells; i++) {
-    var cell = document.createElement('button'); // button melhora o foco/clique
+    var cell = document.createElement('button'); // button melhora foco/clique
     cell.type = 'button';
     cell.className = 'day';
     cell.tabIndex = 0;
@@ -212,7 +204,7 @@ async function load() {
     var iso = isoOf(year, month, day);
     cell.dataset.iso = iso;
 
-    // header do número do dia
+    // número do dia
     var num = document.createElement('div');
     num.className = 'day-number';
     num.textContent = day;
@@ -224,6 +216,7 @@ async function load() {
       var res = resumeByMarketplace(items);
       var wrap = document.createElement('div');
       wrap.className = 'event';
+      wrap.style.pointerEvents = 'none';            // segurança extra
       wrap.innerHTML =
         '<span class="badge">' + items.length + ' etiqueta(s)</span>' +
         (res.SHOPEE ? '<span class="badge badge-shopee">Shopee ' + res.SHOPEE + '</span>' : '') +
@@ -259,7 +252,7 @@ calendar.addEventListener('keydown', function(e) {
 });
 
 // =======================
-// Modal (só filtros por marketplace)
+// Modal (apenas filtros por marketplace)
 // =======================
 function renderLabelsModal(iso, items) {
   if (labelsTitulo) labelsTitulo.textContent = formatISO(iso);
@@ -393,13 +386,12 @@ function renderLabelsModal(iso, items) {
     };
   }
 
-  // limpar dia
+  // limpar dia (DB + local)
   if (btnLabelsClear) {
     btnLabelsClear.onclick = async function () {
       if (!confirm('Remover ' + items.length + ' etiqueta(s) de ' + formatISO(iso) + ' do banco?')) return;
       var resp = await sb.from('labels').delete().eq('date', iso);
       if (resp.error) { alert('Erro ao limpar o dia.'); console.error(resp.error); return; }
-
       try { var store = lsGetMap(); if (store[iso]) { delete store[iso]; lsSetMap(store); } } catch(e){}
       delete monthCache[iso];
       hideLabelsModal();
@@ -433,8 +425,10 @@ function openModalFor(iso) {
 // =======================
 // Navegação
 // =======================
-document.getElementById('backButton')?.addEventListener('click', function(){ nav = nav - 1; load(); });
-document.getElementById('nextButton')?.addEventListener('click', function(){ nav = nav + 1; load(); });
+var backBtn = document.getElementById('backButton');
+var nextBtn = document.getElementById('nextButton');
+if (backBtn) backBtn.addEventListener('click', function(){ nav = nav - 1; load(); });
+if (nextBtn) nextBtn.addEventListener('click', function(){ nav = nav + 1; load(); });
 
 // init
 load();
