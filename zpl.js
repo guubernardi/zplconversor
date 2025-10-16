@@ -27,6 +27,8 @@ const btnPickFiles = $('#btnPickFiles');
 const btnPickDir = $('#btnPickDir');
 const inputFiles = $('#fileFiles');
 const inputDir = $('#fileDir');
+// novo: input de data (opcional no HTML)
+const calDateInput = document.getElementById('calDate');
 
 // ====== Utils ======
 const onlyDigits = (s) => (s == null ? null : String(s).replace(/\D+/g, ''));
@@ -354,6 +356,22 @@ const calTodayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
+
+// inicializa input de data (usa hoje por padrão ou último salvo)
+(function initCalDateInput(){
+  if (!calDateInput) return;
+  const saved = localStorage.getItem('selectedCalendarDate');
+  calDateInput.value = saved || calTodayISO();
+  calDateInput.addEventListener('change', () => {
+    if (calDateInput.value) localStorage.setItem('selectedCalendarDate', calDateInput.value);
+  });
+})();
+
+function getSelectedDateISO(){
+  const v = calDateInput?.value;
+  return (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : calTodayISO();
+}
+
 function calGetStore(){ try { return JSON.parse(localStorage.getItem('labelsByDate')||'{}'); } catch { return {}; } }
 function calSetStore(obj){ localStorage.setItem('labelsByDate', JSON.stringify(obj)); }
 
@@ -382,7 +400,9 @@ function flashSuccess(btn, txt='Enviado!'){
 
 btnCal?.addEventListener('click', async () => {
   if (!resultados.length) return;
-  const dateISO = calTodayISO();
+
+  // usa a data escolhida no input (ou hoje)
+  const dateISO = getSelectedDateISO();
 
   const rows = resultados
     .filter(r => !IGNORAR_SEM_NFE || r.nfe_numero)
@@ -403,7 +423,7 @@ btnCal?.addEventListener('click', async () => {
   try {
     const { error } = await supabase
       .from('labels')
-      .upsert(rows, { onConflict: 'date,nfe_numero' });
+      .upsert(rows, { onConflict: 'date,nfe_numero' }); // se quiser por loja também: 'date,nfe_numero,loja'
     if (error) throw error;
     flashSuccess(btnCal, 'Enviado!');
   } catch (err) {
