@@ -6,7 +6,7 @@
   <meta name="description" content="Conversor de arquivos ZPL com extração automática de dados e integração com calendário" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="shortcut icon" href="calendario.png" type="imagem calendario">
+  <link rel="shortcut icon" href="calendario.png" type="image/png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="zpl.css" />
   <title>ZPL Conversor | Processador Inteligente de Etiquetas</title>
@@ -22,7 +22,7 @@
       font-size:12px;
       font-weight:600
     }
-    
+
     .mkt-ml {
       background:#e0e7ff;
       border-color:#c7d2fe;
@@ -42,7 +42,7 @@
     }
     
     .mkt-unk {
-      background:#f1f5f9; 
+      background:#f1f5f9;
       border-color:#e2e8f0;
       color:#475569
     }
@@ -56,14 +56,19 @@
     .mono {
       font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace
     }
-    
+
     .date-input{
-    padding: 8px 10px;
-    border: 1px solid var(--border, #e2e8f0);
-    border-radius: 8px;
-    font: inherit;
-    height: 36px;
+      padding:8px 10px;
+      border:1px solid var(--border, #e2e8f0);
+      border-radius:8px;
+      font:inherit;
+      height:36px;
+      background:#fff;
     }
+
+    /* garante layout limpo da barra de ações */
+    .cartao-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .cartao-header .botoes{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   </style>
 </head>
 <body>
@@ -90,7 +95,7 @@
       <form class="file-upload-form" onsubmit="return false;">
         <label class="file-upload-label">
           <div class="file-upload-design">
-            <svg viewBox="0 0 640 512" height="64">
+            <svg viewBox="0 0 640 512" height="64" aria-hidden="true">
               <path d="M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-217c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l39-39V392c0 13.3 10.7 24 24 24s24-10.7 24-24V257.9l39 39c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-80-80c-9.4-9.4-24.6-9.4-33.9 0l-80 80z"/>
             </svg>
             <p class="drag-text">Arraste e solte seus arquivos</p>
@@ -103,16 +108,21 @@
 
           <!-- Inputs ocultos -->
           <input id="fileFiles" type="file" multiple accept=".zpl,.txt" style="display:none" />
-          <input id="fileDir"   type="file" multiple webkitdirectory directory style="display:none" />
+          <input id="fileDir" type="file" multiple webkitdirectory directory style="display:none" />
         </label>
       </form>
     </div>
 
     <div class="cartao">
       <div class="cartao-header">
+        <div class="header-title">
+          <strong>Resultados</strong>
+          <span class="suave pequeno" id="count">(0 itens)</span>
+        </div>
+
+        <!-- ÚNICA barra de ações -->
         <div class="botoes">
-          <input id="calDate" type="date" title="Dia no calendário"
-                class="date-input" />
+          <input id="calDate" type="date" title="Dia no calendário" class="date-input" />
           <button id="btnCSV" disabled>Baixar CSV</button>
           <button id="btnJSON" disabled>Copiar JSON</button>
           <button id="btnLimpar" disabled>Limpar</button>
@@ -120,17 +130,8 @@
             Enviar pro calendário
           </button>
         </div>
-        <div class="header-title">
-          <strong>Resultados</strong>
-          <span class="suave pequeno" id="count">(0 itens)</span>
-        </div>
-        <div class="botoes">
-          <button id="btnCSV" disabled>Baixar CSV</button>
-          <button id="btnJSON" disabled>Copiar JSON</button>
-          <button id="btnLimpar" disabled>Limpar</button>
-          <button id="btnCalendario" disabled title="Enviar as etiquetas listadas para o calendário">Enviar pro calendário</button>
-        </div>
       </div>
+
       <div id="out" class="results-container"></div>
     </div>
 
@@ -149,8 +150,7 @@
     </div>
   </main>
 
-
-<script defer src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script defer src="./zpl.js"></script>
+  <script defer src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script defer src="./zpl.js"></script>
 </body>
 </html>
