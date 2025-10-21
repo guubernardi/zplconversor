@@ -5,13 +5,12 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-// Fallback quando não houver nenhuma pista no arquivo:
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // mude para 'UNK' se quiser "Outros" como fallback
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'ML_FLEX' | 'MAGALU' | 'TIKTOK' | 'UNK'
 
 const MARKETPLACE_EMOJI = { ML:'🤝', ML_FLEX:'⚡️', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
   ML:'./logos/mercado-livre.svg',
-  ML_FLEX:'./logos/mercado-livre.svg', // mesmo logo do ML
+  ML_FLEX:'./logos/mercado-livre.svg',
   SHOPEE:'./logos/shopee.svg',
   MAGALU:'./logos/magalu.svg',
   TIKTOK:'./logos/tiktok.svg',
@@ -30,7 +29,6 @@ const btnPickFiles = $('#btnPickFiles');
 const btnPickDir = $('#btnPickDir');
 const inputFiles = $('#fileFiles');
 const inputDir = $('#fileDir');
-// novo: input de data (opcional no HTML)
 const calDateInput = document.getElementById('calDate');
 
 // ====== Utils ======
@@ -90,61 +88,57 @@ function dedupeByNFe(arr) {
 // ====== ZPL helpers ======
 function decodeZplEscapes(s) {
   if (!s) return s;
-  const withoutFH = s.replace(/\^FH\\?/g, '');
-  const percented = withoutFH.replace(/\\([0-9A-Fa-f]{2})/g, '%$1');
-  try { return decodeURIComponent(percented); }
-  catch { return withoutFH.replace(/\\[0-9A-Fa-f]{2}/g, ''); }
+  // remove ^FH (com ou sem barra) e decodifica \xx e _xx usados em ZPL
+  let t = s.replace(/\^FH\\?/g, '');
+  // protege \& (muito comum) para não quebrar o decodeURIComponent
+  t = t.replace(/\\&/g, '%26');
+  // converte \XX e _XX (hex) para %XX
+  t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1')
+       .replace(/_([0-9A-Fa-f]{2})/g, '%$1');
+  try { return decodeURIComponent(t); }
+  catch { return s; }
 }
 function splitZplLabels(zpl) {
   const parts = zpl.split(/(?<=\^XZ)\s*(?=\^XA)/g).map(s=>s.trim()).filter(Boolean);
   return parts.length ? parts : [zpl];
 }
 
-// Heurística reforçada (ML_FLEX > ML > MAGALU > SHOPEE > TIKTOK)
+// -------- Heurística reforçada de Marketplace --------
 function detectMarketplace(text) {
   const tRaw = decodeZplEscapes(text) || '';
   const t = tRaw.toLowerCase();
-  const has  = (re) => re.test(t);
-  const hasI = (re) => re.test(tRaw); // case-insensitive quando útil
+  const has = (re) => re.test(t);
+  const hasRaw = (re) => re.test(tRaw);
 
-  // Assinaturas típicas de Mercado Livre
-  const isML =
-    has(/\bmercado\s*l[ií]vre\b/) ||
-    has(/mercadolivre\.com/) ||
-    has(/\bmeli\b/) ||
-    hasI(/logo[_ ]?meli/i) ||
-    has(/"sender_id"\s*:\s*\d+/) ||
-    has(/"security_digit"\s*:\s*"[0-9]"/) ||
-    has(/\bpack\s*id\b/) ||
-    has(/\benvio:\s*\d{4,}\b/);
+  // SINAIS FORTES DE ML (presentes nas suas etiquetas Flex)
+  const hasMeliWord    = has(/\bmercado\s*l[ií]vre\b/) || has(/mercadolivre\.com/);
+  const hasLogoMeli    = /logo\W*meli/i.test(tRaw) || has(/\bmeli\b/);
+  const hasMLJson      = /"sender_id"\s*:\s*\d+/.test(tRaw) && /"security_digit"\s*:\s*"?\d/.test(tRaw);
+  const hasEnvioField  = /(^|\s)envio:\s*\d+/i.test(tRaw);      // "Envio: 4572029"
+  const hasPackOrVenda = /(pack\s*id|venda:)\s*\d+/i.test(tRaw);
 
-  const isFlex = has(/\benvio\s*flex\b/) || has(/\bflex\s*delivery\b/);
+  const isML = hasMeliWord || hasLogoMeli || hasMLJson || (hasEnvioField && hasPackOrVenda);
 
-  // ---- Mercado Livre FLEX (precisa ser ML + Flex)
+  // ---- ML FLEX (checa antes de ML normal) ----
+  const isFlex = /\benvio\s*flex\b/i.test(tRaw) || has(/\bflex\s*delivery\b/);
   if (isML && isFlex) {
     return { code:'ML_FLEX', name: codeToName('ML_FLEX'), detected:true };
   }
 
-  // ---- Mercado Livre normal
+  // ---- ML normal ----
   if (isML) {
     return { code:'ML', name: codeToName('ML'), detected:true };
   }
 
-  // ---- Magalu
-  if (
-    has(/\bmagalu\b/) ||
-    has(/magazine\s*luiza/) ||
-    has(/magazineluiza\.com/) ||
-    hasI(/logo[_ ]?magalu/i) ||
-    has(/\bparceiro\s*(magalu|mlz)\b/)
-  ) {
+  // ---- Magalu ----
+  if (has(/\bmagalu\b/) || has(/magazine\s*luiza/) || has(/magazineluiza\.com/) || /logo\W*magalu/i.test(tRaw)) {
     return { code:'MAGALU', name: codeToName('MAGALU'), detected:true };
   }
 
-  // ---- Shopee (só quando houver pistas explícitas)
-  if (
+  // ---- Shopee (somente com indícios claros) ----
+  const isShopee =
     has(/\bshopee(\.com\.br)?\b/) ||
-    hasI(/logo[_ ]?shopee/i) ||
+    /logo\W*shopee/i.test(tRaw) ||
     has(/\bc[oó]digo\s+do\s+pedido\b/) ||
     has(/\bid\s+do\s+pedido\b/) ||
     has(/\bpedido\s*[:#]\s*[a-z0-9-]{5,}\b/) ||
@@ -153,21 +147,18 @@ function detectMarketplace(text) {
     has(/\bshpbr[a-z0-9-]*\b/) ||
     has(/\bsl[sx]-?[a-z0-9-]{4,}\b/) ||
     has(/\bcoleta\s*shopee\b/) ||
-    has(/\blog[íi]stica\s*shopee\b/)
-  ) {
+    has(/\blog[íi]stica\s*shopee\b/);
+
+  if (isShopee) {
     return { code:'SHOPEE', name: codeToName('SHOPEE'), detected:true };
   }
 
-  // ---- TikTok Shop
-  if (
-    has(/\btik\s*tok\b/) || has(/\btiktok\s*shop\b/) ||
-    has(/shop\.tiktok\./) || hasI(/logo[_ ]?tiktok/i) ||
-    has(/\btt\s*shop\b/)
-  ) {
+  // ---- TikTok Shop ----
+  if (has(/\btik\s*tok\b/) || has(/\btiktok\s*shop\b/) || has(/shop\.tiktok\./) || /logo\W*tiktok/i.test(tRaw) || has(/\btt\s*shop\b/)) {
     return { code:'TIKTOK', name: codeToName('TIKTOK'), detected:true };
   }
 
-  // ---- fallback (config acima)
+  // ---- fallback (mantendo seu padrão) ----
   const def = (DEFAULT_MARKETPLACE || 'UNK').toUpperCase();
   return { code:def, name: codeToName(def), detected:false };
 }
@@ -393,7 +384,7 @@ const calTodayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 
-// inicializa input de data (usa hoje por padrão ou último salvo)
+// inicializa input de data
 (function initCalDateInput(){
   if (!calDateInput) return;
   const saved = localStorage.getItem('selectedCalendarDate');
