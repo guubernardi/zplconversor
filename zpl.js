@@ -92,8 +92,14 @@ function decodeZplEscapes(s) {
   t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1').replace(/_([0-9A-Fa-f]{2})/g, '%$1');
   try { return decodeURIComponent(t); } catch { return s; }
 }
+
+// *** CORRIGIDO: sem lookbehind (compatível com Safari) ***
 function splitZplLabels(zpl) {
-  const parts = zpl.split(/(?<=\^XZ)\s*(?=\^XA)/g).map(s=>s.trim()).filter(Boolean);
+  if (!zpl) return [];
+  const parts = [];
+  const re = /\^XA[\s\S]*?\^XZ/g; // captura blocos ^XA ... ^XZ
+  let m;
+  while ((m = re.exec(zpl)) !== null) parts.push(m[0].trim());
   return parts.length ? parts : [zpl];
 }
 
@@ -307,51 +313,67 @@ async function processarArquivos(fileList){
   if (!fileList?.length) return;
   uploadLabel?.classList.add('loading');
 
-  for (const f of Array.from(fileList)){
-    const raw = await f.text();
-    const parts = splitZplLabels(raw);
+  try {
+    for (const f of Array.from(fileList)){
+      const raw = await f.text();
+      const parts = splitZplLabels(raw);
 
-    // 1) parse cada parte e guarda o conteúdo p/ varredura
-    const parsed = parts.map((p,i) => {
-      const base = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
-      return { ...base, __content: p };
-    });
+      // 1) parse cada parte e guarda o conteúdo p/ varredura
+      const parsed = parts.map((p,i) => {
+        const base = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
+        return { ...base, __content: p };
+      });
 
-    // 2) tenta detectar um código "do arquivo" (não Shopee)
-    let fileCode = scanCode(raw);
-    if (!fileCode) {
-      for (const it of parsed) {
-        const c = scanCode(it.__content);
-        if (c) { fileCode = c; break; }
+      // 2) tenta detectar um código "do arquivo" (não Shopee)
+      let fileCode = scanCode(raw);
+      if (!fileCode) {
+        for (const it of parsed) {
+          const c = scanCode(it.__content);
+          if (c) { fileCode = c; break; }
+        }
       }
-    }
 
-    // 3) se achou (ML / MAGALU / TIKTOK), propaga p/ todas as partes
-    if (fileCode) {
+      // 3) se achou (ML / MAGALU / TIKTOK), propaga p/ todas as partes
+      if (fileCode) {
+        parsed.forEach(it => {
+          it.marketplace_code = fileCode;
+          it.marketplace      = codeToName(fileCode);
+          it.marketplace_raw  = fileCode;
+          it.marketplace_detected = true;
+        });
+      }
+
+      // 4) salva respeitando IGNORAR_SEM_NFE
       parsed.forEach(it => {
-        it.marketplace_code = fileCode;
-        it.marketplace      = codeToName(fileCode);
-        it.marketplace_raw  = fileCode;
-        it.marketplace_detected = true;
+        delete it.__content;
+        if (!IGNORAR_SEM_NFE || it.nfe_numero) resultados.push(it);
       });
     }
-
-    // 4) salva respeitando IGNORAR_SEM_NFE
-    parsed.forEach(it => {
-      delete it.__content;
-      if (!IGNORAR_SEM_NFE || it.nfe_numero) resultados.push(it);
-    });
+    resultados = dedupeByNFe(resultados);
+  } finally {
+    uploadLabel?.classList.remove('loading','drag-over');
+    renderizar();
   }
-
-  resultados = dedupeByNFe(resultados);
-  uploadLabel?.classList.remove('loading','drag-over');
-  renderizar();
 }
 
-btnPickFiles?.addEventListener('click',()=>inputFiles?.click());
-btnPickDir?.addEventListener('click',()=>inputDir?.click());
-inputFiles?.addEventListener('change',e=>processarArquivos(e.target.files));
-inputDir?.addEventListener('change',e=>processarArquivos(e.target.files));
+// **Novos helpers** para abrir seletor com mais robustez
+function openFilePicker(e) {
+  if (e) e.preventDefault();
+  if (inputFiles) { inputFiles.value = ''; inputFiles.click(); return; }
+  const any = document.querySelector('input[type="file"]');
+  if (any) { any.value = ''; any.click(); }
+}
+
+btnPickFiles?.addEventListener('click', openFilePicker);
+btnPickFiles?.addEventListener('mousedown', (e)=> e.preventDefault());
+
+btnPickDir?.addEventListener('click', (e)=>{ e.preventDefault(); inputDir?.click(); });
+btnPickDir?.addEventListener('mousedown', (e)=> e.preventDefault());
+
+// clique no label grande também abre o seletor
+uploadLabel?.addEventListener('click', openFilePicker);
+
+// DnD
 ;['dragenter','dragover'].forEach(ev=>{
   uploadLabel?.addEventListener(ev,(e)=>{e.preventDefault(); uploadLabel.classList.add('drag-over');});
 });
@@ -359,6 +381,10 @@ inputDir?.addEventListener('change',e=>processarArquivos(e.target.files));
   uploadLabel?.addEventListener(ev,(e)=>{e.preventDefault(); uploadLabel.classList.remove('drag-over');});
 });
 uploadLabel?.addEventListener('drop',(e)=>{ const dt=e.dataTransfer; if(dt?.files) processarArquivos(dt.files); });
+
+// mudanças nos inputs
+inputFiles?.addEventListener('change',e=>processarArquivos(e.target.files));
+inputDir  ?.addEventListener('change',e=>processarArquivos(e.target.files));
 
 // ====== Exportações ======
 function csvCell(v){ return v==null ? '""' : `"${String(v).replaceAll('"','""')}"`; }
