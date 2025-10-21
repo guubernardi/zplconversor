@@ -5,15 +5,12 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'ML_FLEX' | 'MAGALU' | 'TIKTOK' | 'UNK'
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // padrão quando não achar nada
 
-const MARKETPLACE_EMOJI = { ML:'🤝', ML_FLEX:'⚡️', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
+const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
   ML:'./logos/mercado-livre.svg',
-  ML_FLEX:'./logos/mercado-livre.svg',
-  SHOPEE:'./logos/shopee.svg',
-  MAGALU:'./logos/magalu.svg',
-  TIKTOK:'./logos/tiktok.svg',
+  SHOPEE:'./logos/shopee.svg'
 };
 
 // ====== Seletores ======
@@ -44,17 +41,14 @@ const keyLoja = (loja) => (loja || '').trim().toUpperCase().replace(/\s+/g, ' ')
 
 function codeToName(code) {
   const c = (code || 'UNK').toUpperCase();
-  if (c === 'ML_FLEX') return 'Mercado Livre Flex';
   if (c === 'ML') return 'Mercado Livre';
-  if (c === 'MAGALU') return 'Magalu';
   if (c === 'SHOPEE') return 'Shopee';
-  if (c === 'TIKTOK') return 'TikTok Shop';
   return 'Desconhecido';
 }
 
 // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”)
 function dedupeByNFe(arr) {
-  const rank = { ML_FLEX:5, ML:4, MAGALU:3, SHOPEE:2, TIKTOK:2, UNK:1 };
+  const rank = { ML:4, SHOPEE:2, UNK:1 };
   const groups = new Map();
   for (const r of arr) {
     const nfe = normalizeNFe(r.nfe_numero);
@@ -90,7 +84,7 @@ function decodeZplEscapes(s) {
   if (!s) return s;
   // remove ^FH (com ou sem barra) e decodifica \xx e _xx usados em ZPL
   let t = s.replace(/\^FH\\?/g, '');
-  // protege \& (muito comum) para não quebrar o decodeURIComponent
+  // protege \& para não quebrar o decodeURIComponent
   t = t.replace(/\\&/g, '%26');
   // converte \XX e _XX (hex) para %XX
   t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1')
@@ -103,62 +97,15 @@ function splitZplLabels(zpl) {
   return parts.length ? parts : [zpl];
 }
 
-// -------- Heurística reforçada de Marketplace --------
+// -------- Heurística mínima: só ML se tiver "Logo Meli" --------
 function detectMarketplace(text) {
   const tRaw = decodeZplEscapes(text) || '';
-  const t = tRaw.toLowerCase();
-  const has = (re) => re.test(t);
-  const hasRaw = (re) => re.test(tRaw);
-
-  // SINAIS FORTES DE ML (presentes nas suas etiquetas Flex)
-  const hasMeliWord    = has(/\bmercado\s*l[ií]vre\b/) || has(/mercadolivre\.com/);
-  const hasLogoMeli    = /logo\W*meli/i.test(tRaw) || has(/\bmeli\b/);
-  const hasMLJson      = /"sender_id"\s*:\s*\d+/.test(tRaw) && /"security_digit"\s*:\s*"?\d/.test(tRaw);
-  const hasEnvioField  = /(^|\s)envio:\s*\d+/i.test(tRaw);      // "Envio: 4572029"
-  const hasPackOrVenda = /(pack\s*id|venda:)\s*\d+/i.test(tRaw);
-
-  const isML = hasMeliWord || hasLogoMeli || hasMLJson || (hasEnvioField && hasPackOrVenda);
-
-  // ---- ML FLEX (checa antes de ML normal) ----
-  const isFlex = /\benvio\s*flex\b/i.test(tRaw) || has(/\bflex\s*delivery\b/);
-  if (isML && isFlex) {
-    return { code:'ML_FLEX', name: codeToName('ML_FLEX'), detected:true };
-  }
-
-  // ---- ML normal ----
-  if (isML) {
+  // “^FX Logo Meli^FS”, “Logo Meli”, etc.
+  const hasLogoMeli = /(^|[\s\^])logo\W*meli\b/i.test(tRaw);
+  if (hasLogoMeli) {
     return { code:'ML', name: codeToName('ML'), detected:true };
   }
-
-  // ---- Magalu ----
-  if (has(/\bmagalu\b/) || has(/magazine\s*luiza/) || has(/magazineluiza\.com/) || /logo\W*magalu/i.test(tRaw)) {
-    return { code:'MAGALU', name: codeToName('MAGALU'), detected:true };
-  }
-
-  // ---- Shopee (somente com indícios claros) ----
-  const isShopee =
-    has(/\bshopee(\.com\.br)?\b/) ||
-    /logo\W*shopee/i.test(tRaw) ||
-    has(/\bc[oó]digo\s+do\s+pedido\b/) ||
-    has(/\bid\s+do\s+pedido\b/) ||
-    has(/\bpedido\s*[:#]\s*[a-z0-9-]{5,}\b/) ||
-    has(/\b(spx|spx-?br|spxbr)\b/) ||
-    has(/\bshp[_-]?[a-z0-9]{4,}\b/) ||
-    has(/\bshpbr[a-z0-9-]*\b/) ||
-    has(/\bsl[sx]-?[a-z0-9-]{4,}\b/) ||
-    has(/\bcoleta\s*shopee\b/) ||
-    has(/\blog[íi]stica\s*shopee\b/);
-
-  if (isShopee) {
-    return { code:'SHOPEE', name: codeToName('SHOPEE'), detected:true };
-  }
-
-  // ---- TikTok Shop ----
-  if (has(/\btik\s*tok\b/) || has(/\btiktok\s*shop\b/) || has(/shop\.tiktok\./) || /logo\W*tiktok/i.test(tRaw) || has(/\btt\s*shop\b/)) {
-    return { code:'TIKTOK', name: codeToName('TIKTOK'), detected:true };
-  }
-
-  // ---- fallback (mantendo seu padrão) ----
+  // fallback = Shopee
   const def = (DEFAULT_MARKETPLACE || 'UNK').toUpperCase();
   return { code:def, name: codeToName(def), detected:false };
 }
@@ -201,6 +148,7 @@ function extractNFe(text){
   m = t.replace(/[º°]/g, '').match(/\bNFe\s*:\s*([0-9]{3,})\b/i);
   return m ? m[1] : null;
 }
+
 function parseUmArquivo(nome, conteudo){
   const mkt = detectMarketplace(conteudo);
   const nfe = normalizeNFe(extractNFe(conteudo));
@@ -223,10 +171,8 @@ function marketplaceBadge({code}){
   const label = escapeHtml(codeToName(c));
   const file  = MARKETPLACE_LOGOS[c];
   const emoji = MARKETPLACE_EMOJI[c] || '❓';
-  const cls = (c==='ML' || c==='ML_FLEX') ? 'mkt-ml'
+  const cls = (c==='ML') ? 'mkt-ml'
            : c==='SHOPEE' ? 'mkt-shopee'
-           : c==='MAGALU' ? 'mkt-magalu'
-           : c==='TIKTOK' ? 'mkt-tiktok'
            : 'mkt-unk';
   const img   = file ? `<img class="logo-mkt" src="${file}" alt="" onerror="this.remove()">` : '';
   return `<span class="mkt-pill ${cls}">${img}<span class="mkt-emoji">${emoji}</span> ${label}</span>`;
@@ -273,7 +219,7 @@ out.addEventListener('click', (e) => {
   const atual = (resultados[idx]?.marketplace_code || 'UNK').toUpperCase();
 
   const sel = document.createElement('select');
-  ['ML_FLEX','ML','MAGALU','SHOPEE','TIKTOK','UNK'].forEach(code=>{
+  ['ML','SHOPEE','UNK'].forEach(code=>{
     const o=document.createElement('option');
     o.value=code;
     o.textContent = codeToName(code);
@@ -315,26 +261,48 @@ out.addEventListener('click', (e) => {
 });
 
 // ====== Upload / DnD ======
+// *** Propagação por arquivo: se QUALQUER parte tiver "Logo Meli", forçamos ML nas demais partes ***
 async function processarArquivos(fileList){
   if (!fileList?.length) return;
   uploadLabel?.classList.add('loading');
+
   for (const f of Array.from(fileList)){
     const raw = await f.text();
     const parts = splitZplLabels(raw);
-    if (parts.length<=1){
-      const item = parseUmArquivo(f.name, raw);
-      if (!IGNORAR_SEM_NFE || item.nfe_numero) resultados.push(item);
-    } else {
-      parts.forEach((p,i)=>{
-        const item = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
-        if (!IGNORAR_SEM_NFE || item.nfe_numero) resultados.push(item);
+
+    // 1) parse "cru" cada parte
+    const parsed = parts.map((p,i) => {
+      const base = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
+      return { ...base, __content: p };
+    });
+
+    // 2) se QUALQUER parte sinalizar Logo Meli => arquivo é ML
+    const fileIsML = parsed.some(it => /(^|[\s\^])logo\W*meli\b/i.test(decodeZplEscapes(it.__content || '')));
+
+    // 3) propaga para todas as partes que não tenham detecção explícita
+    if (fileIsML) {
+      parsed.forEach(it => {
+        if (!it.marketplace_detected || it.marketplace_code === DEFAULT_MARKETPLACE) {
+          it.marketplace_code = 'ML';
+          it.marketplace      = codeToName('ML');
+          it.marketplace_raw  = 'ML';
+          it.marketplace_detected = true;
+        }
       });
     }
+
+    // 4) salva respeitando a flag IGNORAR_SEM_NFE
+    parsed.forEach(it => {
+      delete it.__content;
+      if (!IGNORAR_SEM_NFE || it.nfe_numero) resultados.push(it);
+    });
   }
+
   resultados = dedupeByNFe(resultados);
   uploadLabel?.classList.remove('loading','drag-over');
   renderizar();
 }
+
 btnPickFiles?.addEventListener('click',()=>inputFiles?.click());
 btnPickDir?.addEventListener('click',()=>inputDir?.click());
 inputFiles?.addEventListener('change',e=>processarArquivos(e.target.files));
@@ -384,7 +352,6 @@ const calTodayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 
-// inicializa input de data
 (function initCalDateInput(){
   if (!calDateInput) return;
   const saved = localStorage.getItem('selectedCalendarDate');
@@ -402,7 +369,6 @@ function getSelectedDateISO(){
 function calGetStore(){ try { return JSON.parse(localStorage.getItem('labelsByDate')||'{}'); } catch { return {}; } }
 function calSetStore(obj){ localStorage.setItem('labelsByDate', JSON.stringify(obj)); }
 
-// mescla e deduplica no localStorage
 function mergeInLocalCalendar(dateISO, rows){
   const store = calGetStore();
   const prev  = Array.isArray(store[dateISO]) ? store[dateISO] : [];
