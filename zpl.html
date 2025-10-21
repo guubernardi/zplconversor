@@ -12,68 +12,15 @@
   <title>ZPL Conversor | Processador Inteligente de Etiquetas</title>
 
   <style>
-    .mkt-pill {
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      border:1px solid var(--border,#e2e8f0);
-      border-radius:999px;
-      padding:3px 10px;
-      font-size:12px;
-      font-weight:600
-    }
-
-    .mkt-ml {
-      background:#e0e7ff;
-      border-color:#c7d2fe;
-      color:#3730a3
-    }
-    
-    .mkt-shopee {
-      background:#ffe4e6;
-      border-color:#fecdd3;
-      color:#9f1239
-    }
-    
-    .mkt-magalu {
-      background:#dcfce7;
-      border-color:#bbf7d0;
-      color:#166534
-    }
-    
-    .mkt-unk {
-      background:#f1f5f9;
-      border-color:#e2e8f0;
-      color:#475569
-    }
-    
-    .logo-mkt {
-      width:16px;
-      height:16px;
-      vertical-align:middle
-    }
-
-    .mkt-tiktok{
-      background:#efe1ff;
-      border-color:#e9d5ff;
-      color:#5b21b6;
-    }
-
-    
-    .mono {
-      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace
-    }
-
-    .date-input{
-      padding:8px 10px;
-      border:1px solid var(--border, #e2e8f0);
-      border-radius:8px;
-      font:inherit;
-      height:36px;
-      background:#fff;
-    }
-
-    /* garante layout limpo da barra de ações */
+    .mkt-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border,#e2e8f0);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+    .mkt-ml{background:#e0e7ff;border-color:#c7d2fe;color:#3730a3}
+    .mkt-shopee{background:#ffe4e6;border-color:#fecdd3;color:#9f1239}
+    .mkt-magalu{background:#dcfce7;border-color:#bbf7d0;color:#166534}
+    .mkt-tiktok{background:#efe1ff;border-color:#e9d5ff;color:#5b21b6}
+    .mkt-unk{background:#f1f5f9;border-color:#e2e8f0;color:#475569}
+    .logo-mkt{width:16px;height:16px;vertical-align:middle}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .date-input{padding:8px 10px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font:inherit;height:36px;background:#fff}
     .cartao-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .cartao-header .botoes{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   </style>
@@ -100,6 +47,7 @@
       <h2>Suba o arquivo aqui</h2>
 
       <form class="file-upload-form" onsubmit="return false;">
+        <!-- Área de arrastar/soltar (label sozinho) -->
         <label class="file-upload-label">
           <div class="file-upload-design">
             <svg viewBox="0 0 640 512" height="64" aria-hidden="true">
@@ -107,16 +55,18 @@
             </svg>
             <p class="drag-text">Arraste e solte seus arquivos</p>
             <p class="or-text">ou</p>
-            <div class="botoes" style="gap:8px;display:flex;flex-wrap:wrap;justify-content:center">
-              <button type="button" id="btnPickFiles">📂 Escolher arquivo(s)</button>
-              <button type="button" id="btnPickDir">📁 Escolher pasta...</button>
-            </div>
           </div>
-
-          <!-- Inputs ocultos -->
-          <input id="fileFiles" type="file" multiple accept=".zpl,.txt" style="display:none" />
-          <input id="fileDir" type="file" multiple webkitdirectory directory style="display:none" />
         </label>
+
+        <!-- Botões FORA do label -->
+        <div class="botoes" style="gap:8px;display:flex;flex-wrap:wrap;justify-content:center">
+          <button type="button" id="btnPickFiles">📂 Escolher arquivo(s)</button>
+          <button type="button" id="btnPickDir">📁 Escolher pasta...</button>
+        </div>
+
+        <!-- Inputs ocultos FORA do label -->
+        <input id="fileFiles" type="file" multiple accept=".zpl,.txt" hidden />
+        <input id="fileDir" type="file" multiple webkitdirectory directory hidden />
       </form>
     </div>
 
@@ -127,13 +77,12 @@
           <span class="suave pequeno" id="count">(0 itens)</span>
         </div>
 
-        <!-- ÚNICA barra de ações -->
         <div class="botoes">
           <input id="calDate" type="date" title="Dia no calendário" class="date-input" />
-          <button id="btnCSV" disabled>Baixar CSV</button>
-          <button id="btnJSON" disabled>Copiar JSON</button>
-          <button id="btnLimpar" disabled>Limpar</button>
-          <button id="btnCalendario" disabled title="Enviar as etiquetas listadas para o calendário">
+          <button id="btnCSV" type="button" disabled>Baixar CSV</button>
+          <button id="btnJSON" type="button" disabled>Copiar JSON</button>
+          <button id="btnLimpar" type="button" disabled>Limpar</button>
+          <button id="btnCalendario" type="button" disabled title="Enviar as etiquetas listadas para o calendário">
             Enviar pro calendário
           </button>
         </div>
