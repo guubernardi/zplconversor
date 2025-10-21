@@ -5,7 +5,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'ML_FLEX' | 'MAGALU' | 'TIKTOK' | 'UNK'
+// Fallback quando não houver nenhuma pista no arquivo:
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // mude para 'UNK' se quiser "Outros" como fallback
 
 const MARKETPLACE_EMOJI = { ML:'🤝', ML_FLEX:'⚡️', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
@@ -99,32 +100,51 @@ function splitZplLabels(zpl) {
   return parts.length ? parts : [zpl];
 }
 
-// Heurística reforçada
+// Heurística reforçada (ML_FLEX > ML > MAGALU > SHOPEE > TIKTOK)
 function detectMarketplace(text) {
   const tRaw = decodeZplEscapes(text) || '';
   const t = tRaw.toLowerCase();
-  const has = (re) => re.test(t);
+  const has  = (re) => re.test(t);
+  const hasI = (re) => re.test(tRaw); // case-insensitive quando útil
 
-  // ---- Mercado Livre FLEX (antes do ML normal) ----
-  if (has(/\benvio\s*flex\b/)) {
+  // Assinaturas típicas de Mercado Livre
+  const isML =
+    has(/\bmercado\s*l[ií]vre\b/) ||
+    has(/mercadolivre\.com/) ||
+    has(/\bmeli\b/) ||
+    hasI(/logo[_ ]?meli/i) ||
+    has(/"sender_id"\s*:\s*\d+/) ||
+    has(/"security_digit"\s*:\s*"[0-9]"/) ||
+    has(/\bpack\s*id\b/) ||
+    has(/\benvio:\s*\d{4,}\b/);
+
+  const isFlex = has(/\benvio\s*flex\b/) || has(/\bflex\s*delivery\b/);
+
+  // ---- Mercado Livre FLEX (precisa ser ML + Flex)
+  if (isML && isFlex) {
     return { code:'ML_FLEX', name: codeToName('ML_FLEX'), detected:true };
   }
 
-  // ---- Mercado Livre (logo meli, meli, domínio, etc.) ----
-  if (has(/\bmercado\s*l[ií]vre\b/) || has(/mercadolivre\.com/) || has(/\bmeli\b/) || /logo[_ ]?meli/i.test(tRaw)) {
+  // ---- Mercado Livre normal
+  if (isML) {
     return { code:'ML', name: codeToName('ML'), detected:true };
   }
 
-  // ---- Magalu ----
-  if (has(/\bmagalu\b/) || has(/magazine\s*luiza/) || has(/magazineluiza\.com/) ||
-      /logo[_ ]?magalu/i.test(tRaw) || has(/\bparceiro\s*(magalu|mlz)\b/)) {
+  // ---- Magalu
+  if (
+    has(/\bmagalu\b/) ||
+    has(/magazine\s*luiza/) ||
+    has(/magazineluiza\.com/) ||
+    hasI(/logo[_ ]?magalu/i) ||
+    has(/\bparceiro\s*(magalu|mlz)\b/)
+  ) {
     return { code:'MAGALU', name: codeToName('MAGALU'), detected:true };
   }
 
-  // ---- Shopee ----
+  // ---- Shopee (só quando houver pistas explícitas)
   if (
     has(/\bshopee(\.com\.br)?\b/) ||
-    /logo[_ ]?shopee/i.test(tRaw) ||
+    hasI(/logo[_ ]?shopee/i) ||
     has(/\bc[oó]digo\s+do\s+pedido\b/) ||
     has(/\bid\s+do\s+pedido\b/) ||
     has(/\bpedido\s*[:#]\s*[a-z0-9-]{5,}\b/) ||
@@ -132,21 +152,22 @@ function detectMarketplace(text) {
     has(/\bshp[_-]?[a-z0-9]{4,}\b/) ||
     has(/\bshpbr[a-z0-9-]*\b/) ||
     has(/\bsl[sx]-?[a-z0-9-]{4,}\b/) ||
-    has(/\bcoleta\s*shopee\b/) || has(/\blog[íi]stica\s*shopee\b/)
+    has(/\bcoleta\s*shopee\b/) ||
+    has(/\blog[íi]stica\s*shopee\b/)
   ) {
     return { code:'SHOPEE', name: codeToName('SHOPEE'), detected:true };
   }
 
-  // ---- TikTok Shop ----
+  // ---- TikTok Shop
   if (
     has(/\btik\s*tok\b/) || has(/\btiktok\s*shop\b/) ||
-    has(/shop\.tiktok\./) || /logo[_ ]?tiktok/i.test(tRaw) ||
+    has(/shop\.tiktok\./) || hasI(/logo[_ ]?tiktok/i) ||
     has(/\btt\s*shop\b/)
   ) {
     return { code:'TIKTOK', name: codeToName('TIKTOK'), detected:true };
   }
 
-  // ---- fallback ----
+  // ---- fallback (config acima)
   const def = (DEFAULT_MARKETPLACE || 'UNK').toUpperCase();
   return { code:def, name: codeToName(def), detected:false };
 }
