@@ -5,7 +5,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // padrão quando não achar nada
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // fallback quando nada é detectado
 
 const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
@@ -82,27 +82,32 @@ function dedupeByNFe(arr) {
 // ====== ZPL helpers ======
 function decodeZplEscapes(s) {
   if (!s) return s;
-  // remove ^FH (com ou sem barra) e decodifica \xx e _xx usados em ZPL
-  let t = s.replace(/\^FH\\?/g, '');
-  // protege \& para não quebrar o decodeURIComponent
-  t = t.replace(/\\&/g, '%26');
-  // converte \XX e _XX (hex) para %XX
-  t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1')
-       .replace(/_([0-9A-Fa-f]{2})/g, '%$1');
-  try { return decodeURIComponent(t); }
-  catch { return s; }
+  // remove ^FH e decodifica \xx e _xx (hex) — preservando \& pra não quebrar
+  let t = s.replace(/\^FH\\?/g, '').replace(/\\&/g, '%26');
+  t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1').replace(/_([0-9A-Fa-f]{2})/g, '%$1');
+  try { return decodeURIComponent(t); } catch { return s; }
 }
+
+// Split em múltiplas etiquetas
 function splitZplLabels(zpl) {
   const parts = zpl.split(/(?<=\^XZ)\s*(?=\^XA)/g).map(s=>s.trim()).filter(Boolean);
   return parts.length ? parts : [zpl];
 }
 
-// -------- Heurística mínima: só ML se tiver "Logo Meli" --------
+// ---------- DETECÇÃO MERCADO LIVRE: “Logo Meli” ----------
+function hasLogoMeli(text) {
+  if (!text) return false;
+  // casa ^FX Logo Meli^FS ou “Logo Meli” em qualquer lugar
+  return (
+    /\^FX\s*Logo\s*Meli(?:\b|\s*\^FS)/i.test(text) ||
+    /\blogo\s*meli(?:\b|\s*\^FS)/i.test(text) ||
+    /logo.{0,20}meli/i.test(text) // super tolerante (ex.: "Logo   Meli")
+  );
+}
 function detectMarketplace(text) {
-  const tRaw = decodeZplEscapes(text) || '';
-  // “^FX Logo Meli^FS”, “Logo Meli”, etc.
-  const hasLogoMeli = /(^|[\s\^])logo\W*meli\b/i.test(tRaw);
-  if (hasLogoMeli) {
+  const raw = text || '';
+  const dec = decodeZplEscapes(text) || '';
+  if (hasLogoMeli(raw) || hasLogoMeli(dec)) {
     return { code:'ML', name: codeToName('ML'), detected:true };
   }
   // fallback = Shopee
@@ -118,7 +123,7 @@ function normalizeLojaName(name){
 function extractLoja(text){
   const t = decodeZplEscapes(text) || '';
 
-  // 1) ML: "NOME #123456..."
+  // 1) ML padrão de DANFE: "NOME #123456..."
   let m = t.match(/([A-Za-zÀ-ÿ0-9 ._\-]{3,}?)\s*#\d{6,}/);
   if (m) return normalizeLojaName(m[1]);
 
@@ -261,7 +266,7 @@ out.addEventListener('click', (e) => {
 });
 
 // ====== Upload / DnD ======
-// *** Propagação por arquivo: se QUALQUER parte tiver "Logo Meli", forçamos ML nas demais partes ***
+// Propagação por arquivo: se QUALQUER parte (ou o arquivo bruto) tiver “Logo Meli”, forçamos ML
 async function processarArquivos(fileList){
   if (!fileList?.length) return;
   uploadLabel?.classList.add('loading');
@@ -270,24 +275,24 @@ async function processarArquivos(fileList){
     const raw = await f.text();
     const parts = splitZplLabels(raw);
 
-    // 1) parse "cru" cada parte
+    // 1) parse cada parte
     const parsed = parts.map((p,i) => {
       const base = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
       return { ...base, __content: p };
     });
 
-    // 2) se QUALQUER parte sinalizar Logo Meli => arquivo é ML
-    const fileIsML = parsed.some(it => /(^|[\s\^])logo\W*meli\b/i.test(decodeZplEscapes(it.__content || '')));
+    // 2) se QUALQUER parte OU o próprio arquivo tiver “Logo Meli” => arquivo é ML
+    const fileIsML =
+      hasLogoMeli(raw) ||
+      parsed.some(it => hasLogoMeli(it.__content) || hasLogoMeli(decodeZplEscapes(it.__content || '')));
 
-    // 3) propaga para todas as partes que não tenham detecção explícita
+    // 3) propaga para todas as partes (principalmente a DANFE com a NFe)
     if (fileIsML) {
       parsed.forEach(it => {
-        if (!it.marketplace_detected || it.marketplace_code === DEFAULT_MARKETPLACE) {
-          it.marketplace_code = 'ML';
-          it.marketplace      = codeToName('ML');
-          it.marketplace_raw  = 'ML';
-          it.marketplace_detected = true;
-        }
+        it.marketplace_code = 'ML';
+        it.marketplace      = codeToName('ML');
+        it.marketplace_raw  = 'ML';
+        it.marketplace_detected = true;
       });
     }
 
