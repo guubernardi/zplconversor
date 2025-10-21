@@ -5,12 +5,15 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // fallback quando nada é detectado
+// fallback quando nada é detectado:
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'MAGALU' | 'TIKTOK' | 'UNK'
 
-const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', UNK:'❓' };
+const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
   ML:'./logos/mercado-livre.svg',
-  SHOPEE:'./logos/shopee.svg'
+  SHOPEE:'./logos/shopee.svg',
+  MAGALU:'./logos/magalu.svg',
+  TIKTOK:'./logos/tiktok.svg',
 };
 
 // ====== Seletores ======
@@ -42,13 +45,15 @@ const keyLoja = (loja) => (loja || '').trim().toUpperCase().replace(/\s+/g, ' ')
 function codeToName(code) {
   const c = (code || 'UNK').toUpperCase();
   if (c === 'ML') return 'Mercado Livre';
+  if (c === 'MAGALU') return 'Magalu';
+  if (c === 'TIKTOK') return 'TikTok Shop';
   if (c === 'SHOPEE') return 'Shopee';
   return 'Desconhecido';
 }
 
 // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”)
 function dedupeByNFe(arr) {
-  const rank = { ML:4, SHOPEE:2, UNK:1 };
+  const rank = { ML:4, MAGALU:3, TIKTOK:3, SHOPEE:2, UNK:1 };
   const groups = new Map();
   for (const r of arr) {
     const nfe = normalizeNFe(r.nfe_numero);
@@ -82,37 +87,65 @@ function dedupeByNFe(arr) {
 // ====== ZPL helpers ======
 function decodeZplEscapes(s) {
   if (!s) return s;
-  // remove ^FH e decodifica \xx e _xx (hex) — preservando \& pra não quebrar
+  // remove ^FH, converte \xx e _xx (hex) e preserva \& como & para buscas
   let t = s.replace(/\^FH\\?/g, '').replace(/\\&/g, '%26');
   t = t.replace(/\\([0-9A-Fa-f]{2})/g, '%$1').replace(/_([0-9A-Fa-f]{2})/g, '%$1');
   try { return decodeURIComponent(t); } catch { return s; }
 }
-
-// Split em múltiplas etiquetas
 function splitZplLabels(zpl) {
   const parts = zpl.split(/(?<=\^XZ)\s*(?=\^XA)/g).map(s=>s.trim()).filter(Boolean);
   return parts.length ? parts : [zpl];
 }
 
-// ---------- DETECÇÃO MERCADO LIVRE: “Logo Meli” ----------
+// ----- Predicados de detecção -----
 function hasLogoMeli(text) {
   if (!text) return false;
-  // casa ^FX Logo Meli^FS ou “Logo Meli” em qualquer lugar
   return (
     /\^FX\s*Logo\s*Meli(?:\b|\s*\^FS)/i.test(text) ||
     /\blogo\s*meli(?:\b|\s*\^FS)/i.test(text) ||
-    /logo.{0,20}meli/i.test(text) // super tolerante (ex.: "Logo   Meli")
+    /logo.{0,20}meli/i.test(text) ||
+    /\bmercado\s*l[ií]vre\b/i.test(text) ||
+    /\bmeli\b/i.test(text) ||
+    /mercadolivre\.com/i.test(text)
   );
 }
-function detectMarketplace(text) {
+function hasMagalu(text) {
+  if (!text) return false;
+  return (
+    /\bmagalu\b/i.test(text) ||
+    /magazine\s*luiza/i.test(text) ||
+    /magazineluiza\.com/i.test(text) ||
+    /parceiro\s*(magalu|mlz)/i.test(text) ||
+    /logo[_\s-]*magalu/i.test(text)
+  );
+}
+function hasTikTok(text) {
+  if (!text) return false;
+  return (
+    /\btik\s*tok\b/i.test(text) ||
+    /\btiktok\s*shop\b/i.test(text) ||
+    /shop\.tiktok\./i.test(text) ||
+    /\btt\s*shop\b/i.test(text) ||
+    /logo[_\s-]*tiktok/i.test(text)
+  );
+}
+
+// Retorna 'ML' | 'MAGALU' | 'TIKTOK' | null (nada detectado)
+function scanCode(text) {
   const raw = text || '';
   const dec = decodeZplEscapes(text) || '';
-  if (hasLogoMeli(raw) || hasLogoMeli(dec)) {
-    return { code:'ML', name: codeToName('ML'), detected:true };
-  }
-  // fallback = Shopee
+  if (hasLogoMeli(raw) || hasLogoMeli(dec))   return 'ML';
+  if (hasMagalu(raw)   || hasMagalu(dec))     return 'MAGALU';
+  if (hasTikTok(raw)   || hasTikTok(dec))     return 'TIKTOK';
+  return null;
+}
+
+// detectMarketplace: cai no fallback SHOPEE se nada detectado
+function detectMarketplace(text) {
+  const code = scanCode(text);
+  if (code) return { code, name: codeToName(code), detected: true };
   const def = (DEFAULT_MARKETPLACE || 'UNK').toUpperCase();
-  return { code:def, name: codeToName(def), detected:false };
+  return { code: def, name: codeToName(def), detected: false };
 }
 
 function normalizeLojaName(name){
@@ -123,7 +156,7 @@ function normalizeLojaName(name){
 function extractLoja(text){
   const t = decodeZplEscapes(text) || '';
 
-  // 1) ML padrão de DANFE: "NOME #123456..."
+  // 1) ML e DANFE comuns: "NOME #123456..."
   let m = t.match(/([A-Za-zÀ-ÿ0-9 ._\-]{3,}?)\s*#\d{6,}/);
   if (m) return normalizeLojaName(m[1]);
 
@@ -178,6 +211,8 @@ function marketplaceBadge({code}){
   const emoji = MARKETPLACE_EMOJI[c] || '❓';
   const cls = (c==='ML') ? 'mkt-ml'
            : c==='SHOPEE' ? 'mkt-shopee'
+           : c==='MAGALU' ? 'mkt-magalu'
+           : c==='TIKTOK' ? 'mkt-tiktok'
            : 'mkt-unk';
   const img   = file ? `<img class="logo-mkt" src="${file}" alt="" onerror="this.remove()">` : '';
   return `<span class="mkt-pill ${cls}">${img}<span class="mkt-emoji">${emoji}</span> ${label}</span>`;
@@ -224,7 +259,7 @@ out.addEventListener('click', (e) => {
   const atual = (resultados[idx]?.marketplace_code || 'UNK').toUpperCase();
 
   const sel = document.createElement('select');
-  ['ML','SHOPEE','UNK'].forEach(code=>{
+  ['ML','MAGALU','TIKTOK','SHOPEE','UNK'].forEach(code=>{
     const o=document.createElement('option');
     o.value=code;
     o.textContent = codeToName(code);
@@ -266,7 +301,8 @@ out.addEventListener('click', (e) => {
 });
 
 // ====== Upload / DnD ======
-// Propagação por arquivo: se QUALQUER parte (ou o arquivo bruto) tiver “Logo Meli”, forçamos ML
+// Regra: se QUALQUER parte (ou o arquivo bruto) indicar ML/Magalu/TikTok, propaga para todas as partes.
+// Caso contrário, cada parte se resolve sozinha e cai no fallback Shopee.
 async function processarArquivos(fileList){
   if (!fileList?.length) return;
   uploadLabel?.classList.add('loading');
@@ -275,28 +311,32 @@ async function processarArquivos(fileList){
     const raw = await f.text();
     const parts = splitZplLabels(raw);
 
-    // 1) parse cada parte
+    // 1) parse cada parte e guarda o conteúdo p/ varredura
     const parsed = parts.map((p,i) => {
       const base = parseUmArquivo(`${f.name}#${String(i+1).padStart(2,'0')}`, p);
       return { ...base, __content: p };
     });
 
-    // 2) se QUALQUER parte OU o próprio arquivo tiver “Logo Meli” => arquivo é ML
-    const fileIsML =
-      hasLogoMeli(raw) ||
-      parsed.some(it => hasLogoMeli(it.__content) || hasLogoMeli(decodeZplEscapes(it.__content || '')));
+    // 2) tenta detectar um código "do arquivo" (não Shopee)
+    let fileCode = scanCode(raw);
+    if (!fileCode) {
+      for (const it of parsed) {
+        const c = scanCode(it.__content);
+        if (c) { fileCode = c; break; }
+      }
+    }
 
-    // 3) propaga para todas as partes (principalmente a DANFE com a NFe)
-    if (fileIsML) {
+    // 3) se achou (ML / MAGALU / TIKTOK), propaga p/ todas as partes
+    if (fileCode) {
       parsed.forEach(it => {
-        it.marketplace_code = 'ML';
-        it.marketplace      = codeToName('ML');
-        it.marketplace_raw  = 'ML';
+        it.marketplace_code = fileCode;
+        it.marketplace      = codeToName(fileCode);
+        it.marketplace_raw  = fileCode;
         it.marketplace_detected = true;
       });
     }
 
-    // 4) salva respeitando a flag IGNORAR_SEM_NFE
+    // 4) salva respeitando IGNORAR_SEM_NFE
     parsed.forEach(it => {
       delete it.__content;
       if (!IGNORAR_SEM_NFE || it.nfe_numero) resultados.push(it);
@@ -344,7 +384,7 @@ btnJSON?.addEventListener('click', async ()=>{
     setTimeout(()=>{btnJSON.textContent=old; btnJSON.classList.remove('success-animation');},1200);
   }catch{
     const blob=new Blob([txt],{type:'application/json'}); const url=URL.createObjectURL(blob);
-    const a=Object.assign(document.createElement('a'),{href:url,download:'nfe-extraidas.json'});
+    const a=Object.assign(document.createElement('a'),{href=url,download:'nfe-extraidas.json'});
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }
