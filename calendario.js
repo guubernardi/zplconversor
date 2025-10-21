@@ -34,11 +34,12 @@ function escapeHtml(s) { s = (s == null) ? '' : String(s); return s.replace(/&/g
 function normCode(val) {
   var v = (val == null) ? '' : String(val).trim();
   var U = v.toUpperCase();
-  if (U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'UNK') return U;
+  if (U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'TIKTOK' || U === 'UNK') return U;
   var l = v.toLowerCase();
   if (l.indexOf('mercado') !== -1 && l.indexOf('livre') !== -1) return 'ML';
   if (l.indexOf('magalu') !== -1 || l.indexOf('magazine') !== -1) return 'MAGALU';
   if (l.indexOf('shopee') !== -1) return 'SHOPEE';
+  if (l.indexOf('tiktok') !== -1 || l.indexOf('tik tok') !== -1 || l.indexOf('tt shop') !== -1) return 'TIKTOK';
   return 'UNK';
 }
 function codeToName(code) {
@@ -46,10 +47,11 @@ function codeToName(code) {
   if (c === 'ML') return 'Mercado Livre';
   if (c === 'MAGALU') return 'Magalu';
   if (c === 'SHOPEE') return 'Shopee';
+  if (c === 'TIKTOK') return 'TikTok Shop';
   return 'Outros';
 }
 function resumeByMarketplace(items) {
-  var out = { ML: 0, SHOPEE: 0, MAGALU: 0, UNK: 0 };
+  var out = { ML: 0, SHOPEE: 0, MAGALU: 0, TIKTOK: 0, UNK: 0 };
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
     var c = normCode(it.marketplace_code || it.marketplace);
@@ -97,7 +99,6 @@ window.addEventListener('keydown', function(e){ if (e.key === 'Escape') hideLabe
 // Supabase + Local: busca mês (sem UTC!)
 // =======================
 async function fetchMonthMap(year, monthZeroBased) {
-  // limites do mês como strings puras, sem toISOString/UTC
   var startISO = year + '-' + pad(monthZeroBased + 1) + '-01';
   var endISO   = (monthZeroBased === 11)
     ? (year + 1) + '-01-01'
@@ -155,7 +156,6 @@ async function fetchMonthMap(year, monthZeroBased) {
     });
   } catch (e2) { console.warn('localStorage inválido:', e2); }
 
-  // dedupe por dia (loja+NF)
   Object.keys(map).forEach(function(k){ map[k] = dedupeByLojaNFe(map[k]); });
   return map;
 }
@@ -171,15 +171,12 @@ async function load() {
   var year  = base.getFullYear();
   var month = base.getMonth();
 
-  // título
   if (monthDisplay) {
     monthDisplay.textContent = base.toLocaleDateString('pt-BR',{ month:'long' }) + ', ' + year;
   }
 
-  // dados
   monthCache = await fetchMonthMap(year, month);
 
-  // calendário
   calendar.innerHTML = '';
 
   var daysInMonth  = new Date(year, month + 1, 0).getDate();
@@ -189,7 +186,7 @@ async function load() {
   totalCells       = rows * 7;
 
   for (var i = 0; i < totalCells; i++) {
-    var cell = document.createElement('button'); // button melhora foco/clique
+    var cell = document.createElement('button');
     cell.type = 'button';
     cell.className = 'day';
     cell.tabIndex = 0;
@@ -204,29 +201,27 @@ async function load() {
     var iso = isoOf(year, month, day);
     cell.dataset.iso = iso;
 
-    // número do dia
     var num = document.createElement('div');
     num.className = 'day-number';
     num.textContent = day;
     cell.appendChild(num);
 
-    // resumo do dia
     var items = monthCache[iso] || [];
     if (items.length) {
       var res = resumeByMarketplace(items);
       var wrap = document.createElement('div');
       wrap.className = 'event';
-      wrap.style.pointerEvents = 'none';            // segurança extra
+      wrap.style.pointerEvents = 'none';
       wrap.innerHTML =
         '<span class="badge">' + items.length + ' etiqueta(s)</span>' +
         (res.SHOPEE ? '<span class="badge badge-shopee">Shopee ' + res.SHOPEE + '</span>' : '') +
-        (res.ML     ? '<span class="badge badge-ml">ML '     + res.ML     + '</span>' : '') +
+        (res.ML     ? '<span class="badge badge-ml">ML ' + res.ML + '</span>' : '') +
         (res.MAGALU ? '<span class="badge badge-magalu">Magalu ' + res.MAGALU + '</span>' : '') +
-        (res.UNK    ? '<span class="badge badge-unk">Outros ' + res.UNK    + '</span>' : '');
+        (res.TIKTOK ? '<span class="badge badge-tiktok">TikTok ' + res.TIKTOK + '</span>' : '') +
+        (res.UNK    ? '<span class="badge badge-unk">Outros ' + res.UNK + '</span>' : '');
       cell.appendChild(wrap);
     }
 
-    // hoje
     var isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear() && nav === 0);
     if (isToday) cell.id = 'currentDay';
 
@@ -252,15 +247,15 @@ calendar.addEventListener('keydown', function(e) {
 });
 
 // =======================
-// Modal (apenas filtros por marketplace)
+// Modal
 // =======================
 function renderLabelsModal(iso, items) {
   if (labelsTitulo) labelsTitulo.textContent = formatISO(iso);
 
   var state = {
     iso: iso,
-    raw: items,                        // já deduplicado loja+NF
-    mkt: { SHOPEE:true, ML:true, MAGALU:true, UNK:true },
+    raw: items,
+    mkt: { SHOPEE:true, ML:true, MAGALU:true, TIKTOK:true, UNK:true },
     q: ''
   };
 
@@ -269,7 +264,11 @@ function renderLabelsModal(iso, items) {
     if (labelsResumo) {
       labelsResumo.innerHTML =
         state.raw.length + ' etiqueta(s) — ' +
-        res.SHOPEE + ' Shopee, ' + res.ML + ' ML, ' + res.MAGALU + ' Magalu, ' + res.UNK + ' Outras.';
+        res.SHOPEE + ' Shopee, ' +
+        res.ML + ' ML, ' +
+        res.MAGALU + ' Magalu, ' +
+        res.TIKTOK + ' TikTok, ' +
+        res.UNK + ' Outras.';
     }
 
     var q = state.q.trim().toLowerCase();
@@ -285,7 +284,7 @@ function renderLabelsModal(iso, items) {
       filtered.push(it);
     }
 
-    var buckets = { SHOPEE:[], ML:[], MAGALU:[], UNK:[] };
+    var buckets = { SHOPEE:[], ML:[], MAGALU:[], TIKTOK:[], UNK:[] };
     for (var j=0;j<filtered.length;j++) {
       var it2 = filtered[j];
       var c = normCode(it2.marketplace_code || it2.marketplace);
@@ -321,10 +320,10 @@ function renderLabelsModal(iso, items) {
       section('Shopee',        buckets.SHOPEE, 'badge-shopee') +
       section('Mercado Livre', buckets.ML,     'badge-ml') +
       section('Magalu',        buckets.MAGALU, 'badge-magalu') +
+      section('TikTok Shop',   buckets.TIKTOK, 'badge-tiktok') +
       section('Outros',        buckets.UNK,    'badge-unk');
   }
 
-  // chips (apenas marketplace)
   var chips = document.querySelectorAll('.flt-mkt');
   for (var i=0;i<chips.length;i++) {
     (function(cb){
@@ -337,14 +336,12 @@ function renderLabelsModal(iso, items) {
     })(chips[i]);
   }
 
-  // busca
   var search = document.getElementById('labelsSearch');
   if (search) {
     search.value = '';
     search.oninput = function() { state.q = search.value; apply(); };
   }
 
-  // export CSV do dia
   var btnCsv = document.getElementById('labelsExportCSV');
   if (btnCsv) {
     btnCsv.onclick = function() {
@@ -386,7 +383,6 @@ function renderLabelsModal(iso, items) {
     };
   }
 
-  // limpar dia (DB + local)
   if (btnLabelsClear) {
     btnLabelsClear.onclick = async function () {
       if (!confirm('Remover ' + items.length + ' etiqueta(s) de ' + formatISO(iso) + ' do banco?')) return;

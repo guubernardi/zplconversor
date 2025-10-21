@@ -5,13 +5,14 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'MAGALU' | 'UNK'
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'MAGALU' | 'TIKTOK' | 'UNK'
 
-const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', UNK:'❓' };
+const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
   ML:'./logos/mercado-livre.svg',
   SHOPEE:'./logos/shopee.svg',
   MAGALU:'./logos/magalu.svg',
+  TIKTOK:'./logos/tiktok.svg',
 };
 
 // ====== Seletores ======
@@ -46,12 +47,13 @@ function codeToName(code) {
   if (c === 'ML') return 'Mercado Livre';
   if (c === 'MAGALU') return 'Magalu';
   if (c === 'SHOPEE') return 'Shopee';
+  if (c === 'TIKTOK') return 'TikTok Shop';
   return 'Desconhecido';
 }
 
 // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”)
 function dedupeByNFe(arr) {
-  const rank = { ML:4, MAGALU:3, SHOPEE:2, UNK:1 };
+  const rank = { ML:4, MAGALU:3, SHOPEE:2, TIKTOK:2, UNK:1 };
   const groups = new Map();
   for (const r of arr) {
     const nfe = normalizeNFe(r.nfe_numero);
@@ -112,7 +114,7 @@ function detectMarketplace(text) {
     return { code:'MAGALU', name: codeToName('MAGALU'), detected:true };
   }
 
-  // ---- Shopee (muitas pistas) ----
+  // ---- Shopee ----
   if (
     has(/\bshopee(\.com\.br)?\b/) ||
     /logo[_ ]?shopee/i.test(tRaw) ||
@@ -128,7 +130,16 @@ function detectMarketplace(text) {
     return { code:'SHOPEE', name: codeToName('SHOPEE'), detected:true };
   }
 
-  // ---- fallback (configurado como SHOPEE) ----
+  // ---- TikTok Shop ----
+  if (
+    has(/\btik\s*tok\b/) || has(/\btiktok\s*shop\b/) ||
+    has(/shop\.tiktok\./) || /logo[_ ]?tiktok/i.test(tRaw) ||
+    has(/\btt\s*shop\b/)
+  ) {
+    return { code:'TIKTOK', name: codeToName('TIKTOK'), detected:true };
+  }
+
+  // ---- fallback ----
   const def = (DEFAULT_MARKETPLACE || 'UNK').toUpperCase();
   return { code:def, name: codeToName(def), detected:false };
 }
@@ -157,7 +168,7 @@ function extractLoja(text){
   const emit = fds.find(s => /^Emitente\s*:/i.test(s));
   if (emit){ const nome = emit.split(/:/).slice(1).join(':').trim(); if (nome) return normalizeLojaName(nome); }
 
-  // 3) Fallback: primeira linha com “cara” de razão social
+  // 3) Fallback
   const cand = fds.find(s =>
     /^[A-ZÀ-Ÿ0-9 .&\-]{6,}$/.test(s) &&
     !/DANFE|Etiqueta|Data|TIPO:|Protocolo|IE:|Endere|Rua|Avenida|CEP|CPF|CNPJ|NF(?:e)?:|Chave/i.test(s)
@@ -193,7 +204,11 @@ function marketplaceBadge({code}){
   const label = escapeHtml(codeToName(c));
   const file  = MARKETPLACE_LOGOS[c];
   const emoji = MARKETPLACE_EMOJI[c] || '❓';
-  const cls   = c==='ML'?'mkt-ml':c==='SHOPEE'?'mkt-shopee':c==='MAGALU'?'mkt-magalu':'mkt-unk';
+  const cls = c==='ML'?'mkt-ml'
+  : c==='SHOPEE'?'mkt-shopee'
+  : c==='MAGALU'?'mkt-magalu'
+  : c==='TIKTOK'?'mkt-tiktok'
+  : 'mkt-unk';
   const img   = file ? `<img class="logo-mkt" src="${file}" alt="" onerror="this.remove()">` : '';
   return `<span class="mkt-pill ${cls}">${img}<span class="mkt-emoji">${emoji}</span> ${label}</span>`;
 }
@@ -230,16 +245,16 @@ function renderizar(){
     </table></div>`;
 }
 
-// ====== Mini-editor de marketplace (corrigido) ======
+// ====== Mini-editor de marketplace ======
 out.addEventListener('click', (e) => {
   const cell = e.target.closest('td.market-cell'); if (!cell) return;
-  if (cell.dataset.editing === '1') return; // já aberto
+  if (cell.dataset.editing === '1') return;
 
   const idx = +cell.dataset.idx;
   const atual = (resultados[idx]?.marketplace_code || 'UNK').toUpperCase();
 
   const sel = document.createElement('select');
-  ['ML','MAGALU','SHOPEE','UNK'].forEach(code=>{
+  ['ML','MAGALU','SHOPEE','TIKTOK','UNK'].forEach(code=>{
     const o=document.createElement('option');
     o.value=code;
     o.textContent = codeToName(code);
@@ -253,23 +268,18 @@ out.addEventListener('click', (e) => {
   sel.style.borderRadius='8px';
   sel.className = 'mkt-editor';
 
-  // impedir re-entrada enquanto edita
   cell.dataset.editing = '1';
   const restore = () => { cell.dataset.editing = ''; };
 
-  // coloca o select e foca
   cell.innerHTML=''; cell.appendChild(sel); sel.focus();
 
-  // não fechar ao clicar dentro
   sel.addEventListener('click', (ev)=>ev.stopPropagation());
   sel.addEventListener('mousedown', (ev)=>ev.stopPropagation());
 
-  // confirma no change ou Enter; cancela no Esc
   const commit = () => {
     const code = (sel.value||'UNK').toUpperCase();
     resultados[idx].marketplace_code = code;
     resultados[idx].marketplace      = codeToName(code);
-    // re-render só a célula pra evitar “piscar”
     cell.innerHTML = marketplaceBadge({code});
     restore();
   };
@@ -283,8 +293,6 @@ out.addEventListener('click', (e) => {
     if (ev.key === 'Enter'){ ev.preventDefault(); commit(); }
     else if (ev.key === 'Escape'){ ev.preventDefault(); cancel(); }
   });
-
-  // importante: NÃO usar blur pra não fechar enquanto escolhe
 });
 
 // ====== Upload / DnD ======
@@ -401,7 +409,6 @@ function flashSuccess(btn, txt='Enviado!'){
 btnCal?.addEventListener('click', async () => {
   if (!resultados.length) return;
 
-  // usa a data escolhida no input (ou hoje)
   const dateISO = getSelectedDateISO();
 
   const rows = resultados
@@ -415,15 +422,13 @@ btnCal?.addEventListener('click', async () => {
       nfe_numero: normalizeNFe(r.nfe_numero),
     }));
 
-  // 1) salva no calendário local SEMPRE
   mergeInLocalCalendar(dateISO, rows);
   flashSuccess(btnCal, 'Salvo local');
 
-  // 2) tenta salvar no Supabase (não bloqueia o local)
   try {
     const { error } = await supabase
       .from('labels')
-      .upsert(rows, { onConflict: 'date,nfe_numero' }); // se quiser por loja também: 'date,nfe_numero,loja'
+      .upsert(rows, { onConflict: 'date,nfe_numero' });
     if (error) throw error;
     flashSuccess(btnCal, 'Enviado!');
   } catch (err) {
