@@ -34,9 +34,10 @@ function escapeHtml(s) { s = (s == null) ? '' : String(s); return s.replace(/&/g
 function normCode(val) {
   var v = (val == null) ? '' : String(val).trim();
   var U = v.toUpperCase();
-  if (U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'TIKTOK' || U === 'UNK') return U;
+  if (U === 'ML_FLEX' || U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'TIKTOK' || U === 'UNK') return U;
   var l = v.toLowerCase();
-  if (l.indexOf('mercado') !== -1 && l.indexOf('livre') !== -1) return 'ML';
+  if (l.indexOf('envio') !== -1 && l.indexOf('flex') !== -1) return 'ML_FLEX';
+  if ((l.indexOf('mercado') !== -1 && l.indexOf('livre') !== -1) || l.indexOf('meli') !== -1) return 'ML';
   if (l.indexOf('magalu') !== -1 || l.indexOf('magazine') !== -1) return 'MAGALU';
   if (l.indexOf('shopee') !== -1) return 'SHOPEE';
   if (l.indexOf('tiktok') !== -1 || l.indexOf('tik tok') !== -1 || l.indexOf('tt shop') !== -1) return 'TIKTOK';
@@ -44,6 +45,7 @@ function normCode(val) {
 }
 function codeToName(code) {
   var c = normCode(code);
+  if (c === 'ML_FLEX') return 'Mercado Livre Flex';
   if (c === 'ML') return 'Mercado Livre';
   if (c === 'MAGALU') return 'Magalu';
   if (c === 'SHOPEE') return 'Shopee';
@@ -51,10 +53,12 @@ function codeToName(code) {
   return 'Outros';
 }
 function resumeByMarketplace(items) {
+  // ML_FLEX agrega em ML na contagem geral
   var out = { ML: 0, SHOPEE: 0, MAGALU: 0, TIKTOK: 0, UNK: 0 };
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
     var c = normCode(it.marketplace_code || it.marketplace);
+    if (c === 'ML_FLEX') c = 'ML';
     if (out.hasOwnProperty(c)) out[c]++; else out.UNK++;
   }
   return out;
@@ -276,7 +280,8 @@ function renderLabelsModal(iso, items) {
     for (var i=0;i<state.raw.length;i++) {
       var it = state.raw[i];
       var code = normCode(it.marketplace_code || it.marketplace);
-      if (!state.mkt[code]) continue;
+      var code2 = (code === 'ML_FLEX') ? 'ML' : code; // ML_FLEX segue o chip ML
+      if (!state.mkt[code2]) continue;
       if (q) {
         var alvo = ((it.nfe_numero || '') + ' ' + (it.loja || '')).toLowerCase();
         if (alvo.indexOf(q) === -1) continue;
@@ -288,7 +293,8 @@ function renderLabelsModal(iso, items) {
     for (var j=0;j<filtered.length;j++) {
       var it2 = filtered[j];
       var c = normCode(it2.marketplace_code || it2.marketplace);
-      if (!buckets[c]) buckets.UNK.push(it2); else buckets[c].push(it2);
+      var c2 = (c === 'ML_FLEX') ? 'ML' : c;
+      if (!buckets[c2]) buckets.UNK.push(it2); else buckets[c2].push(it2);
     }
 
     function section(titulo, arr, cls) {
@@ -330,7 +336,8 @@ function renderLabelsModal(iso, items) {
       cb.checked = true;
       cb.onchange = function() {
         var code = normCode(cb.value);
-        state.mkt[code] = !!cb.checked;
+        var code2 = (code === 'ML_FLEX') ? 'ML' : code;
+        state.mkt[code2] = !!cb.checked;
         apply();
       };
     })(chips[i]);
@@ -352,7 +359,8 @@ function renderLabelsModal(iso, items) {
       for (var i=0;i<state.raw.length;i++) {
         var it = state.raw[i];
         var code = normCode(it.marketplace_code || it.marketplace);
-        if (!state.mkt[code]) continue;
+        var code2 = (code === 'ML_FLEX') ? 'ML' : code;
+        if (!state.mkt[code2]) continue;
         if (q) {
           var alvo = ((it.nfe_numero || '') + ' ' + (it.loja || '')).toLowerCase();
           if (alvo.indexOf(q) === -1) continue;

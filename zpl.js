@@ -5,11 +5,12 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ====== Config ======
 const IGNORAR_SEM_NFE = true;
-const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'MAGALU' | 'TIKTOK' | 'UNK'
+const DEFAULT_MARKETPLACE = 'SHOPEE'; // 'SHOPEE' | 'ML' | 'ML_FLEX' | 'MAGALU' | 'TIKTOK' | 'UNK'
 
-const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
+const MARKETPLACE_EMOJI = { ML:'🤝', ML_FLEX:'⚡️', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
 const MARKETPLACE_LOGOS = {
   ML:'./logos/mercado-livre.svg',
+  ML_FLEX:'./logos/mercado-livre.svg', // mesmo logo do ML
   SHOPEE:'./logos/shopee.svg',
   MAGALU:'./logos/magalu.svg',
   TIKTOK:'./logos/tiktok.svg',
@@ -44,6 +45,7 @@ const keyLoja = (loja) => (loja || '').trim().toUpperCase().replace(/\s+/g, ' ')
 
 function codeToName(code) {
   const c = (code || 'UNK').toUpperCase();
+  if (c === 'ML_FLEX') return 'Mercado Livre Flex';
   if (c === 'ML') return 'Mercado Livre';
   if (c === 'MAGALU') return 'Magalu';
   if (c === 'SHOPEE') return 'Shopee';
@@ -53,7 +55,7 @@ function codeToName(code) {
 
 // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”)
 function dedupeByNFe(arr) {
-  const rank = { ML:4, MAGALU:3, SHOPEE:2, TIKTOK:2, UNK:1 };
+  const rank = { ML_FLEX:5, ML:4, MAGALU:3, SHOPEE:2, TIKTOK:2, UNK:1 };
   const groups = new Map();
   for (const r of arr) {
     const nfe = normalizeNFe(r.nfe_numero);
@@ -103,7 +105,12 @@ function detectMarketplace(text) {
   const t = tRaw.toLowerCase();
   const has = (re) => re.test(t);
 
-  // ---- Mercado Livre ----
+  // ---- Mercado Livre FLEX (antes do ML normal) ----
+  if (has(/\benvio\s*flex\b/)) {
+    return { code:'ML_FLEX', name: codeToName('ML_FLEX'), detected:true };
+  }
+
+  // ---- Mercado Livre (logo meli, meli, domínio, etc.) ----
   if (has(/\bmercado\s*l[ií]vre\b/) || has(/mercadolivre\.com/) || has(/\bmeli\b/) || /logo[_ ]?meli/i.test(tRaw)) {
     return { code:'ML', name: codeToName('ML'), detected:true };
   }
@@ -204,11 +211,11 @@ function marketplaceBadge({code}){
   const label = escapeHtml(codeToName(c));
   const file  = MARKETPLACE_LOGOS[c];
   const emoji = MARKETPLACE_EMOJI[c] || '❓';
-  const cls = c==='ML'?'mkt-ml'
-  : c==='SHOPEE'?'mkt-shopee'
-  : c==='MAGALU'?'mkt-magalu'
-  : c==='TIKTOK'?'mkt-tiktok'
-  : 'mkt-unk';
+  const cls = (c==='ML' || c==='ML_FLEX') ? 'mkt-ml'
+           : c==='SHOPEE' ? 'mkt-shopee'
+           : c==='MAGALU' ? 'mkt-magalu'
+           : c==='TIKTOK' ? 'mkt-tiktok'
+           : 'mkt-unk';
   const img   = file ? `<img class="logo-mkt" src="${file}" alt="" onerror="this.remove()">` : '';
   return `<span class="mkt-pill ${cls}">${img}<span class="mkt-emoji">${emoji}</span> ${label}</span>`;
 }
@@ -254,7 +261,7 @@ out.addEventListener('click', (e) => {
   const atual = (resultados[idx]?.marketplace_code || 'UNK').toUpperCase();
 
   const sel = document.createElement('select');
-  ['ML','MAGALU','SHOPEE','TIKTOK','UNK'].forEach(code=>{
+  ['ML_FLEX','ML','MAGALU','SHOPEE','TIKTOK','UNK'].forEach(code=>{
     const o=document.createElement('option');
     o.value=code;
     o.textContent = codeToName(code);
