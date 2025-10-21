@@ -384,7 +384,7 @@ btnJSON?.addEventListener('click', async ()=>{
     setTimeout(()=>{btnJSON.textContent=old; btnJSON.classList.remove('success-animation');},1200);
   }catch{
     const blob=new Blob([txt],{type:'application/json'}); const url=URL.createObjectURL(blob);
-    const a=Object.assign(document.createElement('a'),{href=url,download:'nfe-extraidas.json'});
+    const a=Object.assign(document.createElement('a'),{href: url,download:'nfe-extraidas.json'});
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }
