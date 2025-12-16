@@ -1,11 +1,7 @@
 // =======================
-//  Calendário de Pedidos (Supabase) — grid novo + clique confiável + TZ fix
+//  Calendário de Pedidos (LOCALSTORAGE) — grid novo + clique confiável + ISO fix
+//  Lê do localStorage: key "labelsByDate"
 // =======================
-
-// --- Supabase ---
-var SUPABASE_URL = 'https://ijbzcxfqxaftjhzgjqco.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlqYnpjeGZxeGFmdGpoemdqcWNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyMDI5OTYsImV4cCI6MjA3NTc3ODk5Nn0.S12ux2LmUc6clMIW6NSjk1C65Z8IzIAik4L1wbxffiM';
-var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- Estado / refs ---
 var nav = 0;           // deslocamento de meses
@@ -34,7 +30,11 @@ function escapeHtml(s) { s = (s == null) ? '' : String(s); return s.replace(/&/g
 function normCode(val) {
   var v = (val == null) ? '' : String(val).trim();
   var U = v.toUpperCase();
+
+  // aceita códigos diretos
   if (U === 'ML_FLEX' || U === 'ML' || U === 'SHOPEE' || U === 'MAGALU' || U === 'TIKTOK' || U === 'UNK') return U;
+
+  // tenta inferir por nome
   var l = v.toLowerCase();
   if (l.indexOf('envio') !== -1 && l.indexOf('flex') !== -1) return 'ML_FLEX';
   if ((l.indexOf('mercado') !== -1 && l.indexOf('livre') !== -1) || l.indexOf('meli') !== -1) return 'ML';
@@ -72,13 +72,14 @@ function dedupeByLojaNFe(arr) {
     var it = arr[i] || {};
     var loja = (it.loja || '').toUpperCase().trim();
     var nf   = String(it.nfe_numero || '').replace(/\D+/g,'');
+    if (!nf) continue;
     var key  = loja + '|' + nf;
     if (!seen[key]) { seen[key] = true; out.push(it); }
   }
   return out;
 }
 
-// LocalStorage (fallback/merge)
+// LocalStorage
 function lsGetMap() { try { return JSON.parse(localStorage.getItem('labelsByDate') || '{}'); } catch(e){ return {}; } }
 function lsSetMap(obj) { try { localStorage.setItem('labelsByDate', JSON.stringify(obj || {})); } catch(e){} }
 
@@ -100,7 +101,7 @@ if (backDrop) backDrop.onclick = hideLabelsModal;
 window.addEventListener('keydown', function(e){ if (e.key === 'Escape') hideLabelsModal(); });
 
 // =======================
-// Supabase + Local: busca mês (sem UTC!)
+// LocalStorage: busca mês
 // =======================
 async function fetchMonthMap(year, monthZeroBased) {
   var startISO = year + '-' + pad(monthZeroBased + 1) + '-01';
@@ -109,58 +110,30 @@ async function fetchMonthMap(year, monthZeroBased) {
     : year + '-' + pad(monthZeroBased + 2) + '-01';
 
   var map = {};
+  var store = lsGetMap();
 
-  // Supabase
-  try {
-    var resp = await sb
-      .from('labels')
-      .select('date, arquivo, loja, marketplace_code, marketplace, nfe_numero')
-      .gte('date', startISO)
-      .lt('date', endISO)
-      .order('date', { ascending: true });
-
-    if (!resp.error) {
-      var data = resp.data || [];
-      for (var i=0;i<data.length;i++) {
-        var row = data[i];
+  Object.keys(store).forEach(function(iso){
+    if (iso >= startISO && iso < endISO) {
+      var arr = store[iso] || [];
+      for (var j=0;j<arr.length;j++) {
+        var r = arr[j] || {};
         var item = {
-          date: row.date,
-          arquivo: row.arquivo,
-          loja: row.loja,
-          marketplace_code: normCode(row.marketplace_code || row.marketplace),
-          marketplace: row.marketplace,
-          nfe_numero: row.nfe_numero
+          date: iso,
+          arquivo: r.arquivo,
+          loja: r.loja,
+          marketplace_code: normCode(r.marketplace_code || r.marketplace),
+          marketplace: r.marketplace || codeToName(r.marketplace_code),
+          nfe_numero: r.nfe_numero
         };
-        (map[item.date] || (map[item.date] = [])).push(item);
+        (map[iso] || (map[iso] = [])).push(item);
       }
-    } else {
-      console.error('Erro Supabase:', resp.error);
     }
-  } catch (e) { console.error('Falha geral Supabase:', e); }
+  });
 
-  // LocalStorage merge
-  try {
-    var store = lsGetMap();
-    Object.keys(store).forEach(function(iso){
-      if (iso >= startISO && iso < endISO) {
-        var arr = store[iso] || [];
-        (map[iso] || (map[iso] = []));
-        for (var j=0;j<arr.length;j++) {
-          var r = arr[j];
-          map[iso].push({
-            date: iso,
-            arquivo: r.arquivo,
-            loja: r.loja,
-            marketplace_code: normCode(r.marketplace_code || r.marketplace),
-            marketplace: r.marketplace,
-            nfe_numero: r.nfe_numero
-          });
-        }
-      }
-    });
-  } catch (e2) { console.warn('localStorage inválido:', e2); }
+  Object.keys(map).forEach(function(k){
+    map[k] = dedupeByLojaNFe(map[k]);
+  });
 
-  Object.keys(map).forEach(function(k){ map[k] = dedupeByLojaNFe(map[k]); });
   return map;
 }
 
@@ -168,6 +141,8 @@ async function fetchMonthMap(year, monthZeroBased) {
 // Render do calendário (grid fixado)
 // =======================
 async function load() {
+  if (!calendar) return;
+
   var today = new Date();
   var base  = new Date(today.getFullYear(), today.getMonth(), 1);
   if (nav !== 0) { base.setMonth(base.getMonth() + nav); }
@@ -234,21 +209,23 @@ async function load() {
 }
 
 // clique/teclado (event delegation)
-calendar.addEventListener('click', function(e) {
-  var cell = e.target.closest('.day');
-  if (!cell || cell.classList.contains('padding')) return;
-  var iso = cell.dataset.iso;
-  if (iso) openModalFor(iso);
-});
-calendar.addEventListener('keydown', function(e) {
-  var cell = e.target.closest('.day');
-  if (!cell || cell.classList.contains('padding')) return;
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
+if (calendar) {
+  calendar.addEventListener('click', function(e) {
+    var cell = e.target.closest('.day');
+    if (!cell || cell.classList.contains('padding')) return;
     var iso = cell.dataset.iso;
     if (iso) openModalFor(iso);
-  }
-});
+  });
+  calendar.addEventListener('keydown', function(e) {
+    var cell = e.target.closest('.day');
+    if (!cell || cell.classList.contains('padding')) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      var iso = cell.dataset.iso;
+      if (iso) openModalFor(iso);
+    }
+  });
+}
 
 // =======================
 // Modal
@@ -280,7 +257,7 @@ function renderLabelsModal(iso, items) {
     for (var i=0;i<state.raw.length;i++) {
       var it = state.raw[i];
       var code = normCode(it.marketplace_code || it.marketplace);
-      var code2 = (code === 'ML_FLEX') ? 'ML' : code; // ML_FLEX segue o chip ML
+      var code2 = (code === 'ML_FLEX') ? 'ML' : code;
       if (!state.mkt[code2]) continue;
       if (q) {
         var alvo = ((it.nfe_numero || '') + ' ' + (it.loja || '')).toLowerCase();
@@ -391,12 +368,17 @@ function renderLabelsModal(iso, items) {
     };
   }
 
+  // LIMPAR DIA: apaga do localStorage
   if (btnLabelsClear) {
-    btnLabelsClear.onclick = async function () {
-      if (!confirm('Remover ' + items.length + ' etiqueta(s) de ' + formatISO(iso) + ' do banco?')) return;
-      var resp = await sb.from('labels').delete().eq('date', iso);
-      if (resp.error) { alert('Erro ao limpar o dia.'); console.error(resp.error); return; }
-      try { var store = lsGetMap(); if (store[iso]) { delete store[iso]; lsSetMap(store); } } catch(e){}
+    btnLabelsClear.onclick = function () {
+      if (!confirm('Remover ' + items.length + ' etiqueta(s) de ' + formatISO(iso) + ' do calendário local?')) return;
+
+      var store = lsGetMap();
+      if (store[iso]) {
+        delete store[iso];
+        lsSetMap(store);
+      }
+
       delete monthCache[iso];
       hideLabelsModal();
       load();
@@ -422,6 +404,7 @@ function openModalFor(iso) {
     showLabelsModal();
     return;
   }
+
   renderLabelsModal(iso, items);
   showLabelsModal();
 }
