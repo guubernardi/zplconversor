@@ -528,23 +528,66 @@
   }
 
   function calGetStore(){ try { return JSON.parse(localStorage.getItem('labelsByDate')||'{}'); } catch { return {}; } }
-  function calSetStore(obj){ localStorage.setItem('labelsByDate', JSON.stringify(obj)); }
+  function calSetStore(obj){ localStorage.setItem('labelsByDate', JSON.stringify(obj || {})); }
 
+  // ✅ Anti-duplicação + aviso (não duplica NFe no mesmo dia)
   function mergeInLocalCalendar(dateISO, rows){
     const store = calGetStore();
     const prev  = Array.isArray(store[dateISO]) ? store[dateISO] : [];
-    const merged = dedupeByNFe(
-      prev.concat(rows).map(r => ({
+
+    // NFes que já existem nesse dia
+    const existing = new Set(
+      prev.map(r => normalizeNFe(r.nfe_numero)).filter(Boolean)
+    );
+
+    // 1) remove duplicadas dentro do batch (rows)
+    const seenBatch = new Set();
+    const dedupBatch = [];
+    const dupInBatch = [];
+
+    for (const r of rows) {
+      const nf = normalizeNFe(r.nfe_numero);
+      r.nfe_numero = nf;
+
+      if (!nf) { dedupBatch.push(r); continue; }
+
+      if (seenBatch.has(nf)) {
+        dupInBatch.push(nf);
+        continue;
+      }
+      seenBatch.add(nf);
+      dedupBatch.push(r);
+    }
+
+    // 2) remove duplicadas contra o que já estava salvo
+    const toAdd = [];
+    const dupExisting = [];
+
+    for (const r of dedupBatch) {
+      const nf = normalizeNFe(r.nfe_numero);
+      if (nf && existing.has(nf)) {
+        dupExisting.push(nf);
+        continue;
+      }
+      if (nf) existing.add(nf);
+
+      toAdd.push({
         arquivo: r.arquivo,
         loja: r.loja ?? null,
         marketplace: codeToName((r.marketplace_code || 'UNK').toUpperCase()),
         marketplace_code: (r.marketplace_code || 'UNK').toUpperCase(),
-        nfe_numero: normalizeNFe(r.nfe_numero),
-      }))
-    );
-    store[dateISO] = merged;
+        nfe_numero: nf,
+      });
+    }
+
+    store[dateISO] = prev.concat(toAdd);
     calSetStore(store);
-    return merged.length;
+
+    return {
+      added: toAdd.length,
+      total: store[dateISO].length,
+      duplicates: Array.from(new Set([...dupInBatch, ...dupExisting])).filter(Boolean)
+    };
   }
 
   function flashSuccess(btn, txt='Salvo!'){
@@ -570,11 +613,18 @@
       nfe_numero: normalizeNFe(r.nfe_numero),
     }));
 
-    const total = mergeInLocalCalendar(dateISO, rows);
-    flashSuccess(btnCal, `Salvo (${total})`);
+    const info = mergeInLocalCalendar(dateISO, rows);
 
-    // opcional: abrir o calendário já no dia
-    // window.location.href = `pedidos.html?d=${dateISO}`;
+    flashSuccess(btnCal, info.added ? `Salvo (+${info.added})` : 'Nada novo');
+
+    if (info.duplicates.length) {
+      const lista = info.duplicates.slice(0, 20).join(', ');
+      const extra = info.duplicates.length > 20 ? `\n(+${info.duplicates.length - 20} outras)` : '';
+      alert(`⚠️ Nota(s) duplicada(s) detectada(s) e NÃO adicionada(s):\n${lista}${extra}`);
+    }
+
+
+    window.location.href = `pedidos.html?d=${dateISO}`;
   });
 
   // inicial
