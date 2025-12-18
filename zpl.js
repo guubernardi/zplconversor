@@ -5,6 +5,11 @@
   const IGNORAR_SEM_NFE = true;
   const DEFAULT_MARKETPLACE = 'SHOPEE'; // SHOPEE | ML | MAGALU | TIKTOK | UNK
 
+  // ✅ DUPLICIDADE
+  // 'DAY'    = não repetir a mesma NFe no MESMO dia
+  // 'GLOBAL' = não repetir a mesma NFe em NENHUMA data do calendário
+  const DUPLICATE_SCOPE = 'DAY';
+
   const MARKETPLACE_EMOJI = { ML:'🤝', SHOPEE:'🛒', MAGALU:'🛍️', TIKTOK:'🎵', UNK:'❓' };
   const MARKETPLACE_LOGOS = {
     ML:'./logos/mercado-livre.svg',
@@ -50,7 +55,13 @@
     return 'Desconhecido';
   }
 
-  // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”)
+  function formatISO_BR(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
+    const [y,m,d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  // Dedupe por NFe (mantém 1 por NF e escolhe o mais “confiável”) — para a LISTA da tela
   function dedupeByNFe(arr) {
     const rank = { ML:4, MAGALU:3, TIKTOK:3, SHOPEE:2, UNK:1 };
     const groups = new Map();
@@ -189,7 +200,7 @@
     return cand ? normalizeLojaName(cand) : null;
   }
 
-  // ====== EXTRAÇÃO NFe (bem reforçada) ======
+  // ====== EXTRAÇÃO NFe ======
   function extractAccessKey44(text) {
     const t = decodeZplEscapes(text) || '';
     const re = /(?:\d[\s\-]*){44}/g;
@@ -242,6 +253,75 @@
       marketplace_detected: !!mkt.detected,
       nfe_numero: nfe,
     };
+  }
+
+  // ====== UI: Toast ======
+  function ensureToastArea(){
+    let el = document.getElementById('toastArea');
+    if (el) return el;
+
+    el = document.createElement('div');
+    el.id = 'toastArea';
+    el.style.position = 'fixed';
+    el.style.right = '16px';
+    el.style.bottom = '16px';
+    el.style.zIndex = '9999';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.gap = '10px';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function toast(msg, type='info'){
+    try{
+      const area = ensureToastArea();
+
+      const box = document.createElement('div');
+      box.style.maxWidth = '420px';
+      box.style.padding = '12px 14px';
+      box.style.borderRadius = '14px';
+      box.style.border = '1px solid rgba(226,232,240,1)';
+      box.style.background = 'rgba(255,255,255,0.98)';
+      box.style.boxShadow = '0 18px 45px rgba(2,6,23,.18)';
+      box.style.backdropFilter = 'blur(8px)';
+      box.style.color = '#0f172a';
+      box.style.fontFamily = 'Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      box.style.fontSize = '14px';
+      box.style.lineHeight = '1.35';
+      box.style.display = 'flex';
+      box.style.gap = '10px';
+      box.style.alignItems = 'flex-start';
+
+      const dot = document.createElement('div');
+      dot.style.width = '10px';
+      dot.style.height = '10px';
+      dot.style.borderRadius = '999px';
+      dot.style.marginTop = '5px';
+      dot.style.background = type === 'warn' ? '#f59e0b' : type === 'ok' ? '#22c55e' : '#3b82f6';
+
+      const content = document.createElement('div');
+      content.style.flex = '1';
+      content.innerHTML = msg;
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '×';
+      close.style.border = '0';
+      close.style.background = 'transparent';
+      close.style.cursor = 'pointer';
+      close.style.fontSize = '18px';
+      close.style.lineHeight = '1';
+      close.style.color = '#334155';
+      close.onclick = () => box.remove();
+
+      box.appendChild(dot);
+      box.appendChild(content);
+      box.appendChild(close);
+      area.appendChild(box);
+
+      setTimeout(()=>{ box.remove(); }, 5500);
+    }catch(_){}
   }
 
   // ====== Render ======
@@ -447,7 +527,6 @@
     inputDir.click();
   });
 
-  // Clique no label grande também abre seletor
   uploadLabel?.addEventListener('click', (e) => {
     e.preventDefault();
     if (!inputFiles) return;
@@ -464,7 +543,6 @@
   });
   uploadLabel?.addEventListener('drop',(e)=>{ const dt=e.dataTransfer; if(dt?.files) processarArquivos(dt.files); });
 
-  // Inputs
   inputFiles?.addEventListener('change',e=>processarArquivos(e.target.files));
   inputDir  ?.addEventListener('change',e=>processarArquivos(e.target.files));
 
@@ -530,63 +608,85 @@
   function calGetStore(){ try { return JSON.parse(localStorage.getItem('labelsByDate')||'{}'); } catch { return {}; } }
   function calSetStore(obj){ localStorage.setItem('labelsByDate', JSON.stringify(obj || {})); }
 
-  // ✅ Anti-duplicação + aviso (não duplica NFe no mesmo dia)
+  // ✅ Merge com detecção REAL de duplicadas + lista com datas
   function mergeInLocalCalendar(dateISO, rows){
     const store = calGetStore();
-    const prev  = Array.isArray(store[dateISO]) ? store[dateISO] : [];
+    const prevDay = Array.isArray(store[dateISO]) ? store[dateISO] : [];
 
-    // NFes que já existem nesse dia
-    const existing = new Set(
-      prev.map(r => normalizeNFe(r.nfe_numero)).filter(Boolean)
+    // mapa do dia: nfe -> true
+    const daySeen = new Set(
+      prevDay.map(r => normalizeNFe(r?.nfe_numero)).filter(Boolean)
     );
 
-    // 1) remove duplicadas dentro do batch (rows)
-    const seenBatch = new Set();
-    const dedupBatch = [];
-    const dupInBatch = [];
-
-    for (const r of rows) {
-      const nf = normalizeNFe(r.nfe_numero);
-      r.nfe_numero = nf;
-
-      if (!nf) { dedupBatch.push(r); continue; }
-
-      if (seenBatch.has(nf)) {
-        dupInBatch.push(nf);
-        continue;
+    // mapa global: nfe -> primeira data que aparece
+    const globalFirstDate = new Map();
+    if (DUPLICATE_SCOPE === 'GLOBAL') {
+      for (const [d, arr] of Object.entries(store)) {
+        if (!Array.isArray(arr)) continue;
+        for (const it of arr) {
+          const nf = normalizeNFe(it?.nfe_numero);
+          if (nf && !globalFirstDate.has(nf)) globalFirstDate.set(nf, d);
+        }
       }
-      seenBatch.add(nf);
-      dedupBatch.push(r);
     }
 
-    // 2) remove duplicadas contra o que já estava salvo
+    // dedupe dentro do batch + contra store
+    const batchSeen = new Set();
     const toAdd = [];
-    const dupExisting = [];
+    const duplicates = []; // { nfe, date }
 
-    for (const r of dedupBatch) {
-      const nf = normalizeNFe(r.nfe_numero);
-      if (nf && existing.has(nf)) {
-        dupExisting.push(nf);
+    for (const r0 of rows) {
+      const nf = normalizeNFe(r0?.nfe_numero);
+      if (!nf) continue;
+
+      // duplicada dentro do batch (mesmo clique)
+      if (batchSeen.has(nf)) {
+        duplicates.push({ nfe: nf, date: dateISO });
         continue;
       }
-      if (nf) existing.add(nf);
+      batchSeen.add(nf);
+
+      // duplicada no dia
+      if (daySeen.has(nf)) {
+        duplicates.push({ nfe: nf, date: dateISO });
+        continue;
+      }
+
+      // duplicada em outro dia (se GLOBAL)
+      if (DUPLICATE_SCOPE === 'GLOBAL') {
+        const alreadyOn = globalFirstDate.get(nf);
+        if (alreadyOn && alreadyOn !== dateISO) {
+          duplicates.push({ nfe: nf, date: alreadyOn });
+          continue;
+        }
+      }
+
+      daySeen.add(nf);
+      if (DUPLICATE_SCOPE === 'GLOBAL') globalFirstDate.set(nf, dateISO);
 
       toAdd.push({
-        arquivo: r.arquivo,
-        loja: r.loja ?? null,
-        marketplace: codeToName((r.marketplace_code || 'UNK').toUpperCase()),
-        marketplace_code: (r.marketplace_code || 'UNK').toUpperCase(),
+        arquivo: r0.arquivo,
+        loja: r0.loja ?? null,
+        marketplace: codeToName((r0.marketplace_code || 'UNK').toUpperCase()),
+        marketplace_code: (r0.marketplace_code || 'UNK').toUpperCase(),
         nfe_numero: nf,
       });
     }
 
-    store[dateISO] = prev.concat(toAdd);
+    store[dateISO] = prevDay.concat(toAdd);
     calSetStore(store);
+
+    // normaliza duplicadas únicas (por nf + date)
+    const uniq = new Map();
+    for (const d of duplicates) {
+      const k = `${d.nfe}|${d.date}`;
+      if (!uniq.has(k)) uniq.set(k, d);
+    }
 
     return {
       added: toAdd.length,
-      total: store[dateISO].length,
-      duplicates: Array.from(new Set([...dupInBatch, ...dupExisting])).filter(Boolean)
+      totalDay: store[dateISO].length,
+      duplicates: Array.from(uniq.values())
     };
   }
 
@@ -600,7 +700,7 @@
   btnCal?.addEventListener('click', () => {
     const comNfe = resultados.filter(r => !!r.nfe_numero);
     if (!comNfe.length) {
-      alert('Não tem nenhum item com NFe pra enviar pro calendário. (As etiquetas podem não conter NFe/chave.)');
+      alert('Não tem nenhum item com NFe pra enviar pro calendário.');
       return;
     }
 
@@ -614,17 +714,34 @@
     }));
 
     const info = mergeInLocalCalendar(dateISO, rows);
+    console.info('[CAL] merge info:', info);
 
-    flashSuccess(btnCal, info.added ? `Salvo (+${info.added})` : 'Nada novo');
+    if (info.added) flashSuccess(btnCal, `Salvo (+${info.added})`);
+    else flashSuccess(btnCal, 'Nada novo');
 
     if (info.duplicates.length) {
-      const lista = info.duplicates.slice(0, 20).join(', ');
-      const extra = info.duplicates.length > 20 ? `\n(+${info.duplicates.length - 20} outras)` : '';
-      alert(`⚠️ Nota(s) duplicada(s) detectada(s) e NÃO adicionada(s):\n${lista}${extra}`);
+      // monta mensagem bonitinha
+      const linhas = info.duplicates
+        .slice(0, 25)
+        .map(x => `• NF ${x.nfe} (já existe em ${formatISO_BR(x.date)})`)
+        .join('<br>');
+
+      toast(`<strong>Duplicadas ignoradas:</strong><br>${linhas}${info.duplicates.length > 25 ? `<br>… +${info.duplicates.length - 25} outras` : ''}`, 'warn');
+
+      // fallback: alert
+      const plain = info.duplicates
+        .slice(0, 25)
+        .map(x => `- NF ${x.nfe} (já existe em ${formatISO_BR(x.date)})`)
+        .join('\n');
+
+      alert(
+        `⚠️ Nota(s) duplicada(s) detectada(s) e NÃO adicionada(s):\n\n` +
+        plain +
+        (info.duplicates.length > 25 ? `\n… +${info.duplicates.length - 25} outras` : '')
+      );
+    } else {
+      toast(`Calendário atualizado (${formatISO_BR(dateISO)}).`, 'ok');
     }
-
-
-    window.location.href = `pedidos.html?d=${dateISO}`;
   });
 
   // inicial
