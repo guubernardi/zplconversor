@@ -527,11 +527,15 @@
     inputDir.click();
   });
 
-  uploadLabel?.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (!inputFiles) return;
-    inputFiles.value = '';
-    inputFiles.click();
+  // ✅ NÃO coloca click no label (porque o <label for="fileFiles"> já faz isso nativamente)
+  // Só acessibilidade por teclado:
+  uploadLabel?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!inputFiles) return;
+      inputFiles.value = '';
+      inputFiles.click();
+    }
   });
 
   // DnD
@@ -720,15 +724,16 @@
     else flashSuccess(btnCal, 'Nada novo');
 
     if (info.duplicates.length) {
-      // monta mensagem bonitinha
       const linhas = info.duplicates
         .slice(0, 25)
-        .map(x => `• NF ${x.nfe} (já existe em ${formatISO_BR(x.date)})`)
+        .map(x => `• NF <strong>${escapeHtml(x.nfe)}</strong> (já existe em <strong>${escapeHtml(formatISO_BR(x.date))}</strong>)`)
         .join('<br>');
 
-      toast(`<strong>Duplicadas ignoradas:</strong><br>${linhas}${info.duplicates.length > 25 ? `<br>… +${info.duplicates.length - 25} outras` : ''}`, 'warn');
+      toast(
+        `<strong>Duplicadas ignoradas:</strong><br>${linhas}${info.duplicates.length > 25 ? `<br>… +${info.duplicates.length - 25} outras` : ''}`,
+        'warn'
+      );
 
-      // fallback: alert
       const plain = info.duplicates
         .slice(0, 25)
         .map(x => `- NF ${x.nfe} (já existe em ${formatISO_BR(x.date)})`)
@@ -740,7 +745,7 @@
         (info.duplicates.length > 25 ? `\n… +${info.duplicates.length - 25} outras` : '')
       );
     } else {
-      toast(`Calendário atualizado (${formatISO_BR(dateISO)}).`, 'ok');
+      toast(`Calendário atualizado (${escapeHtml(formatISO_BR(dateISO))}).`, 'ok');
     }
   });
 
